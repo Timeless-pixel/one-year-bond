@@ -162,12 +162,11 @@ function ChatWindow({
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-1 pb-4">
         {messages
-          .filter((m) => {
-            // hide the seeded system-style first-turn user prompt
+          .filter((m: UIMessage) => {
             const t = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
             return !(m.role === "user" && t.startsWith("(system:"));
           })
-          .map((m) => {
+          .map((m: UIMessage) => {
             const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
             const mine = m.role === "user";
             return (
