@@ -70,14 +70,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: "Lumen — Your AI companion for one year" },
       {
         property: "og:description",
-        content: "Create one AI companion. Build memories. Watch your relationship grow over 365 days.",
+        content: "One character. One year. One relationship. Create a personal AI companion and share a 365-day journey together.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Lumen — Your AI companion for one year" },
+      { name: "twitter:description", content: "One character. One year. One relationship. Create a personal AI companion and share a 365-day journey together." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/p8euE5OPCccpq4MWoAzWahj7ASf1/social-images/social-1784802501809-1000288340.webp" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/p8euE5OPCccpq4MWoAzWahj7ASf1/social-images/social-1784802501809-1000288340.webp" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
