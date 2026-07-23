@@ -351,7 +351,7 @@ function CreatePage() {
           <div>
             <h2 className="text-3xl">Meet {form.name || "them"}</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Generate a portrait, then begin your 365-day journey.
+              Your character portrait will be generated using AI based on the appearance and style you've created.
             </p>
             <div className="mt-6 flex flex-col items-center gap-5">
               <div
@@ -371,17 +371,32 @@ function CreatePage() {
                     {form.name[0] || "?"}
                   </div>
                 )}
+                {portraitLoading && (
+                  <div className="absolute inset-x-0 bottom-0 bg-black/40 px-3 py-2 text-center text-xs text-white/90 backdrop-blur">
+                    {loadingMsg}
+                  </div>
+                )}
               </div>
+              {portrait && portraitFinal && !portraitLoading && (
+                <div className="text-sm text-muted-foreground">Your companion is ready.</div>
+              )}
               <button
                 onClick={generatePortrait}
-                disabled={portraitLoading}
+                disabled={portraitLoading || (allowanceQ.data?.remaining ?? 1) <= 0}
                 className="glass rounded-full px-5 py-2 text-sm transition hover:brightness-125 disabled:opacity-60"
               >
                 {portraitLoading ? "Painting…" : portrait ? "Regenerate portrait" : "Generate portrait"}
               </button>
+              <div className="text-xs text-muted-foreground">
+                {allowanceQ.data
+                  ? `Portrait generations remaining today: ${allowanceQ.data.remaining} of ${allowanceQ.data.limit}`
+                  : "Loading your generation allowance…"}
+              </div>
             </div>
           </div>
         )}
+
+
 
         <div className="mt-10 flex items-center justify-between">
           <button
