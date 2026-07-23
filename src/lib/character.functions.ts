@@ -96,3 +96,21 @@ export const getMessages = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return data ?? [];
   });
+
+export const PORTRAIT_DAILY_LIMIT = 4;
+
+export const getPortraitAllowance = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count, error } = await context.supabase
+      .from("image_generations")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("status", "succeeded")
+      .gte("created_at", since);
+    if (error) throw new Error(error.message);
+    const used = count ?? 0;
+    return { used, remaining: Math.max(0, PORTRAIT_DAILY_LIMIT - used), limit: PORTRAIT_DAILY_LIMIT };
+  });
+

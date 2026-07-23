@@ -4,13 +4,25 @@ export async function streamImage(
   endpoint: string,
   prompt: string,
   onFrame: (dataUrl: string, isFinal: boolean) => void,
+  opts?: { headers?: Record<string, string> },
 ): Promise<void> {
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(opts?.headers ?? {}) },
     body: JSON.stringify({ prompt }),
   });
-  if (!res.ok || !res.body) throw new Error(`Image gen failed: ${res.status}`);
+  if (!res.ok) {
+    let msg = `Image gen failed: ${res.status}`;
+    try {
+      const j = await res.json();
+      if (j?.error?.message) msg = j.error.message;
+    } catch {}
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  if (!res.body) throw new Error("No response body");
+
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
