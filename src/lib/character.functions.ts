@@ -51,6 +51,7 @@ export const createCharacter = createServerFn({ method: "POST" })
         relationship_type: data.relationship_type,
         communication_style: data.communication_style,
         goals: data.goals || null,
+        avatar_url: data.avatar_url || null,
         mood: "Curious",
         relationship_stage: "Stranger",
       })
