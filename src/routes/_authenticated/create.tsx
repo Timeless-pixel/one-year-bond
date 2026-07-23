@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createCharacter, updateAvatarUrl, getPortraitAllowance } from "@/lib/character.functions";
+import { createCharacter, getMyCharacter, getPortraitAllowance } from "@/lib/character.functions";
 import { streamImage } from "@/lib/streamImage";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -57,7 +57,7 @@ const initial: FormState = {
 
 function CreatePage() {
   const create = useServerFn(createCharacter);
-  const saveAvatar = useServerFn(updateAvatarUrl);
+  const fetchCharacter = useServerFn(getMyCharacter);
   const fetchAllowance = useServerFn(getPortraitAllowance);
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -69,10 +69,20 @@ function CreatePage() {
   const [portraitFinal, setPortraitFinal] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
 
+  const existingQ = useQuery({
+    queryKey: ["character"],
+    queryFn: () => fetchCharacter(),
+  });
+
+  useEffect(() => {
+    if (existingQ.data) navigate({ to: "/chat" });
+  }, [existingQ.data, navigate]);
+
   const allowanceQ = useQuery({
     queryKey: ["portrait-allowance"],
     queryFn: () => fetchAllowance(),
     staleTime: 10_000,
+    enabled: !existingQ.data,
   });
 
   function update<K extends keyof FormState>(k: K, v: FormState[K]) {
@@ -170,11 +180,9 @@ function CreatePage() {
           relationship_type: form.relationship_type,
           communication_style: form.communication_style,
           goals: form.goals,
+          avatar_url: portrait && portraitFinal ? portrait : undefined,
         },
       });
-      if (portrait && portraitFinal) {
-        await saveAvatar({ data: { avatarUrl: portrait } });
-      }
       await qc.invalidateQueries({ queryKey: ["character"] });
       toast.success(`${form.name} is here.`);
       navigate({ to: "/chat" });

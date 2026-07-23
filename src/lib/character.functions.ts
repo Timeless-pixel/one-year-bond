@@ -17,6 +17,7 @@ const CreateCharacterInput = z.object({
   relationship_type: z.string().default("Friend"),
   communication_style: z.string().default("Casual"),
   goals: z.string().max(1000).default(""),
+  avatar_url: z.string().optional(),
 });
 
 export const createCharacter = createServerFn({ method: "POST" })
@@ -50,6 +51,7 @@ export const createCharacter = createServerFn({ method: "POST" })
         relationship_type: data.relationship_type,
         communication_style: data.communication_style,
         goals: data.goals || null,
+        avatar_url: data.avatar_url || null,
         mood: "Curious",
         relationship_stage: "Stranger",
       })
