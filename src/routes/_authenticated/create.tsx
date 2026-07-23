@@ -57,7 +57,7 @@ const initial: FormState = {
 
 function CreatePage() {
   const create = useServerFn(createCharacter);
-  const saveAvatar = useServerFn(updateAvatarUrl);
+  const fetchCharacter = useServerFn(getMyCharacter);
   const fetchAllowance = useServerFn(getPortraitAllowance);
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -69,10 +69,20 @@ function CreatePage() {
   const [portraitFinal, setPortraitFinal] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
 
+  const existingQ = useQuery({
+    queryKey: ["character"],
+    queryFn: () => fetchCharacter(),
+  });
+
+  useEffect(() => {
+    if (existingQ.data) navigate({ to: "/chat" });
+  }, [existingQ.data, navigate]);
+
   const allowanceQ = useQuery({
     queryKey: ["portrait-allowance"],
     queryFn: () => fetchAllowance(),
     staleTime: 10_000,
+    enabled: !existingQ.data,
   });
 
   function update<K extends keyof FormState>(k: K, v: FormState[K]) {
