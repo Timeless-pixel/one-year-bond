@@ -58,6 +58,7 @@ const initial: FormState = {
 function CreatePage() {
   const create = useServerFn(createCharacter);
   const saveAvatar = useServerFn(updateAvatarUrl);
+  const fetchAllowance = useServerFn(getPortraitAllowance);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
@@ -66,6 +67,13 @@ function CreatePage() {
   const [portrait, setPortrait] = useState<string | null>(null);
   const [portraitLoading, setPortraitLoading] = useState(false);
   const [portraitFinal, setPortraitFinal] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("");
+
+  const allowanceQ = useQuery({
+    queryKey: ["portrait-allowance"],
+    queryFn: () => fetchAllowance(),
+    staleTime: 10_000,
+  });
 
   function update<K extends keyof FormState>(k: K, v: FormState[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -81,22 +89,59 @@ function CreatePage() {
 
   const steps = ["Style", "Identity", "Appearance", "Personality", "Backstory", "Relationship", "Preview"];
 
+  useEffect(() => {
+    if (!portraitLoading) return;
+    const messages = [
+      "Bringing your companion to life…",
+      "Creating their appearance…",
+      "Adding the finishing touches…",
+    ];
+    let i = 0;
+    setLoadingMsg(messages[0]);
+    const t = setInterval(() => {
+      i = (i + 1) % messages.length;
+      setLoadingMsg(messages[i]);
+    }, 2200);
+    return () => clearInterval(t);
+  }, [portraitLoading]);
+
   async function generatePortrait() {
+    if (portraitLoading) return;
     setPortraitLoading(true);
     setPortraitFinal(false);
     setPortrait(null);
     const prompt = `Portrait of ${form.name || "a character"}, ${form.style} style. ${form.gender ? form.gender + ", " : ""}${form.age ? "age " + form.age + ", " : ""}${form.hair_color} ${form.hair_style} hair, ${form.eye_color} eyes${form.outfit ? ", wearing " + form.outfit : ""}. Beautiful lighting, cinematic composition, soft violet and cyan aurora backlight, portrait framing, high quality, detailed.`;
     try {
-      await streamImage("/api/generate-portrait", prompt, (dataUrl, final) => {
-        setPortrait(dataUrl);
-        if (final) setPortraitFinal(true);
-      });
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) {
+        toast.error("Please sign in again to generate your portrait.");
+        return;
+      }
+      await streamImage(
+        "/api/generate-portrait",
+        prompt,
+        (dataUrl, final) => {
+          setPortrait(dataUrl);
+          if (final) setPortraitFinal(true);
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      await qc.invalidateQueries({ queryKey: ["portrait-allowance"] });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Portrait failed");
+      setPortrait(null);
+      setPortraitFinal(false);
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : "Something went wrong while creating your companion's portrait. Your generation credit was not used. Please try again.",
+      );
+      await qc.invalidateQueries({ queryKey: ["portrait-allowance"] });
     } finally {
       setPortraitLoading(false);
     }
   }
+
 
   async function submit() {
     if (!form.name.trim()) {
