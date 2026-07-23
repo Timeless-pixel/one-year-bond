@@ -92,6 +92,44 @@ export type Database = {
         }
         Relationships: []
       }
+      image_generations: {
+        Row: {
+          character_id: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          character_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          character_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "image_generations_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           character_id: string
