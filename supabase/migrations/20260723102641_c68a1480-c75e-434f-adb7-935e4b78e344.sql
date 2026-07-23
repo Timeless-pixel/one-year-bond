@@ -1,0 +1,3 @@
+CREATE POLICY "Users insert own generations" ON public.image_generations FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users update own generations" ON public.image_generations FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users delete own generations" ON public.image_generations FOR DELETE TO authenticated USING (auth.uid() = user_id);
