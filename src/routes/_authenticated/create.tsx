@@ -180,11 +180,9 @@ function CreatePage() {
           relationship_type: form.relationship_type,
           communication_style: form.communication_style,
           goals: form.goals,
+          avatar_url: portrait && portraitFinal ? portrait : undefined,
         },
       });
-      if (portrait && portraitFinal) {
-        await saveAvatar({ data: { avatarUrl: portrait } });
-      }
       await qc.invalidateQueries({ queryKey: ["character"] });
       toast.success(`${form.name} is here.`);
       navigate({ to: "/chat" });
