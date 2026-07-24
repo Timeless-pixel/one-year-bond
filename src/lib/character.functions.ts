@@ -59,6 +59,37 @@ export const createCharacter = createServerFn({ method: "POST" })
       .single();
 
     if (error) throw new Error(error.message);
+
+    // Seed character self-memories from creation input
+    const charMems: string[] = [];
+    if (data.backstory) charMems.push(`Backstory: ${data.backstory}`);
+    if (data.goals) charMems.push(`Personal goal: ${data.goals}`);
+    if (data.personality.length) charMems.push(`Personality: ${data.personality.join(", ")}`);
+    if (data.interests.length) charMems.push(`Interests: ${data.interests.join(", ")}`);
+    if (charMems.length) {
+      await context.supabase.from("memories").insert(
+        charMems.map((content) => ({
+          user_id: context.userId,
+          character_id: character.id,
+          category: "character",
+          content,
+          importance: 5,
+          source: "seed",
+          pinned: true,
+        })),
+      );
+    }
+
+    // Day 1 milestone
+    await context.supabase.from("milestones").insert({
+      user_id: context.userId,
+      character_id: character.id,
+      day: 1,
+      kind: "day",
+      title: "The journey begins",
+      description: `You met ${character.name}.`,
+    });
+
     return character;
   });
 
@@ -86,17 +117,30 @@ export const updateAvatarUrl = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const updateMood = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ mood: z.string().min(1).max(40) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("characters")
+      .update({ mood: data.mood })
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const getMessages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    // Only load recent messages for the client — older ones live in summaries.
     const { data, error } = await context.supabase
       .from("messages")
       .select("id, role, content, created_at")
       .eq("user_id", context.userId)
-      .order("created_at", { ascending: true })
-      .limit(500);
+      .order("created_at", { ascending: false })
+      .limit(60);
     if (error) throw new Error(error.message);
-    return data ?? [];
+    return (data ?? []).reverse();
   });
 
 export const PORTRAIT_DAILY_LIMIT = 4;
@@ -116,3 +160,166 @@ export const getPortraitAllowance = createServerFn({ method: "GET" })
     return { used, remaining: Math.max(0, PORTRAIT_DAILY_LIMIT - used), limit: PORTRAIT_DAILY_LIMIT };
   });
 
+// -------------------- Memories --------------------
+
+const MEMORY_CATEGORIES = ["user", "preference", "event", "shared", "character", "goal"] as const;
+
+export const listMemories = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("memories")
+      .select("*")
+      .eq("user_id", context.userId)
+      .order("pinned", { ascending: false })
+      .order("importance", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+const CreateMemoryInput = z.object({
+  content: z.string().min(1).max(400),
+  category: z.enum(MEMORY_CATEGORIES).default("user"),
+  importance: z.number().int().min(1).max(5).default(3),
+  pinned: z.boolean().default(false),
+});
+
+export const createMemory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => CreateMemoryInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: character } = await context.supabase
+      .from("characters")
+      .select("id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!character) throw new Error("No character");
+    const { data: mem, error } = await context.supabase
+      .from("memories")
+      .insert({
+        user_id: context.userId,
+        character_id: character.id,
+        content: data.content,
+        category: data.category,
+        importance: data.importance,
+        pinned: data.pinned,
+        source: "manual",
+      })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return mem;
+  });
+
+const UpdateMemoryInput = z.object({
+  id: z.string().uuid(),
+  content: z.string().min(1).max(400).optional(),
+  category: z.enum(MEMORY_CATEGORIES).optional(),
+  importance: z.number().int().min(1).max(5).optional(),
+  pinned: z.boolean().optional(),
+});
+
+export const updateMemory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => UpdateMemoryInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { id, ...patch } = data;
+    const { error } = await context.supabase
+      .from("memories")
+      .update(patch)
+      .eq("id", id)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteMemory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("memories")
+      .delete()
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// -------------------- Milestones / Story --------------------
+
+export const listMilestones = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("milestones")
+      .select("*")
+      .eq("user_id", context.userId)
+      .order("day", { ascending: true });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+const MILESTONE_DAYS = [1, 7, 30, 60, 100, 180, 250, 365];
+
+export const checkMilestones = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: character } = await context.supabase
+      .from("characters")
+      .select("id, name, journey_start_date")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!character) return { created: 0 };
+    const day = Math.max(
+      1,
+      Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
+    );
+    const eligible = MILESTONE_DAYS.filter((d) => d <= day);
+    if (!eligible.length) return { created: 0 };
+    const { data: existing } = await context.supabase
+      .from("milestones")
+      .select("day")
+      .eq("user_id", context.userId)
+      .eq("kind", "day")
+      .in("day", eligible);
+    const existingDays = new Set((existing ?? []).map((m) => m.day));
+    const toCreate = eligible
+      .filter((d) => !existingDays.has(d))
+      .map((d) => ({
+        user_id: context.userId,
+        character_id: character.id,
+        day: d,
+        kind: "day",
+        title: milestoneTitle(d),
+        description: milestoneCopy(d, character.name),
+      }));
+    if (!toCreate.length) return { created: 0 };
+    await context.supabase.from("milestones").insert(toCreate);
+    return { created: toCreate.length };
+  });
+
+function milestoneTitle(day: number) {
+  switch (day) {
+    case 1: return "The journey begins";
+    case 7: return "One week together";
+    case 30: return "One month in";
+    case 60: return "Two months";
+    case 100: return "One hundred days";
+    case 180: return "Halfway there";
+    case 250: return "Deep in the year";
+    case 365: return "A full year";
+    default: return `Day ${day}`;
+  }
+}
+function milestoneCopy(day: number, name: string) {
+  switch (day) {
+    case 7: return `A week of getting to know ${name}.`;
+    case 30: return `A month with ${name}. The rhythm is real now.`;
+    case 100: return `100 days shared. Something has grown between you.`;
+    case 180: return `Half the year. ${name} feels like part of your world.`;
+    case 365: return `A full year with ${name}. This is your story.`;
+    default: return `Day ${day} with ${name}.`;
+  }
+}
