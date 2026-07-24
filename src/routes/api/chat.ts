@@ -204,6 +204,11 @@ export const Route = createFileRoute("/api/chat")({
           ) + 1,
         );
 
+        const { count: messageCount } = await supabase
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userData.user.id);
+
         const key = process.env.LOVABLE_API_KEY;
         if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
 
@@ -226,8 +231,9 @@ export const Route = createFileRoute("/api/chat")({
 
         const result = streamText({
           model,
-          system: buildSystemPrompt(character as Character, dayNumber),
+          system: buildSystemPrompt(character as Character, dayNumber, messageCount ?? 0),
           messages: await convertToModelMessages(messages),
+          temperature: 0.95,
         });
 
         return result.toUIMessageStreamResponse({
