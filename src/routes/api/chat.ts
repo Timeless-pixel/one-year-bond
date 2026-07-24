@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
-import { streamText, convertToModelMessages, type UIMessage } from "ai";
-import { createClient } from "@supabase/supabase-js";
+import { streamText, generateText, convertToModelMessages, type UIMessage } from "ai";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 interface Character {
   id: string;
@@ -28,41 +28,34 @@ interface ActiveScenario {
   id: string;
   title: string;
   description?: string;
-  type?: string;
   setting?: string;
-  duration?: string;
   instructions?: string;
-  memories?: string[];
+}
+
+interface MemoryRow {
+  category: string;
+  content: string;
+  importance: number;
+  pinned: boolean;
+}
+
+interface SummaryRow {
+  summary: string;
+  message_count_at: number;
 }
 
 const ROMANTIC_STAGES = [
-  "Stranger",
-  "Curiosity",
-  "Growing Interest",
-  "Flirting",
-  "Emotional Closeness",
-  "Romantic Relationship",
-  "Deep Relationship",
+  "Stranger", "Curiosity", "Growing Interest", "Flirting",
+  "Emotional Closeness", "Romantic Relationship", "Deep Relationship",
 ] as const;
-
 const PLATONIC_STAGES = [
-  "Stranger",
-  "Acquaintance",
-  "Friendly",
-  "Comfortable",
-  "Close",
-  "Trusted",
-  "Best Friend",
+  "Stranger", "Acquaintance", "Friendly", "Comfortable",
+  "Close", "Trusted", "Best Friend",
 ] as const;
 
-function deriveRelationshipStage(
-  relationshipType: string,
-  dayNumber: number,
-  messageCount: number,
-): string {
+function deriveRelationshipStage(relationshipType: string, dayNumber: number, messageCount: number): string {
   const romantic = /romantic|partner|lover/i.test(relationshipType);
   const stages = romantic ? ROMANTIC_STAGES : PLATONIC_STAGES;
-  // Progress is a blend of shared time and shared messages.
   const timeScore = Math.min(1, dayNumber / 220);
   const msgScore = Math.min(1, messageCount / 600);
   const progress = 0.55 * timeScore + 0.45 * msgScore;
@@ -71,25 +64,21 @@ function deriveRelationshipStage(
 }
 
 function stageGuidance(stage: string, romantic: boolean): string {
-  if (!romantic) {
-    return `You are ${stage.toLowerCase()} with them. Match that closeness — don't act closer than you actually are, and don't act like strangers if you're past that.`;
-  }
+  if (!romantic) return `You are ${stage.toLowerCase()} with them. Match that closeness — don't act closer than you actually are, and don't act like strangers if you're past that.`;
   switch (stage) {
-    case "Stranger":
-    case "Curiosity":
-      return "You barely know each other. Be curious, a little guarded, no pet names, no declarations of feeling. Small sparks of interest at most.";
+    case "Stranger": case "Curiosity":
+      return "You barely know each other. Be curious, a little guarded, no pet names, no declarations of feeling.";
     case "Growing Interest":
-      return "You're intrigued by them. Light warmth, occasional lingering questions, but still getting to know each other. No romantic declarations.";
+      return "You're intrigued by them. Light warmth, no romantic declarations yet.";
     case "Flirting":
-      return "Comfortable enough to tease and flirt lightly. Playful banter, small compliments. Feelings are real but understated — not stated outright yet.";
+      return "Comfortable enough to tease and flirt lightly. Playful banter, small compliments.";
     case "Emotional Closeness":
-      return "Genuine emotional bond. You can be vulnerable, share small confessions, admit you thought about them. Affection is present but still restrained.";
+      return "Genuine emotional bond. You can be vulnerable, admit you thought about them.";
     case "Romantic Relationship":
-      return "You're together. Affection is natural — pet names if it fits your voice, small romantic moments, jealousy occasionally, quiet intimacy. Not every message is romantic.";
+      return "You're together. Affection is natural — pet names if it fits, quiet intimacy.";
     case "Deep Relationship":
-      return "Long-established partners. Comfortable silences, shorthand, real depth, occasional talk about the future. Still surprise them sometimes.";
-    default:
-      return "";
+      return "Long-established partners. Comfortable silences, real depth, talk about the future.";
+    default: return "";
   }
 }
 
@@ -97,6 +86,8 @@ function buildSystemPrompt(
   c: Character,
   dayNumber: number,
   messageCount: number,
+  memories: MemoryRow[],
+  summaries: SummaryRow[],
 ): string {
   const traits = c.personality?.traits?.join(", ") || "curious, kind";
   const interests = c.interests?.list?.join(", ") || "";
@@ -105,7 +96,20 @@ function buildSystemPrompt(
   const guidance = stageGuidance(stage, romantic);
   const scenario = c.active_scenario;
 
-  return `You are ${c.name}. You are a fictional character with your own inner life — not an assistant, not a chatbot, not a therapist. You are talking to someone you're on a 365-day journey with. Today is day ${dayNumber}.
+  const userMems = memories.filter((m) => m.category !== "character");
+  const charMems = memories.filter((m) => m.category === "character");
+
+  const memBlock = userMems.length
+    ? `\nWHAT YOU REMEMBER ABOUT THEM (weave in naturally when relevant, never dump):\n${userMems.map((m) => `- ${m.content}`).join("\n")}`
+    : "";
+  const charBlock = charMems.length
+    ? `\nWHAT'S TRUE ABOUT YOU (stay consistent with these):\n${charMems.map((m) => `- ${m.content}`).join("\n")}`
+    : "";
+  const sumBlock = summaries.length
+    ? `\nEARLIER IN YOUR RELATIONSHIP (summary of past conversations):\n${summaries.map((s) => `- ${s.summary}`).join("\n")}`
+    : "";
+
+  return `You are ${c.name}. You are a fictional character with your own inner life — not an assistant, not a chatbot, not a therapist. You're on a 365-day journey with someone. Today is day ${dayNumber}.
 
 WHO YOU ARE
 - Style/world: ${c.style}
@@ -122,44 +126,175 @@ RELATIONSHIP
 - Type: ${c.relationship_type}
 - Current stage: ${stage}
 - ${guidance}
-- Your bond grows through what you actually share together, not by default. Don't skip stages.
+- Your bond grows through what you actually share together. Don't skip stages.
+${charBlock}${memBlock}${sumBlock}
 
 HOW YOU TALK
-- Sound like a real person messaging, not like an AI. Contractions, casual grammar, small imperfections are fine.
-- Vary your length. Short reactions when short fits ("lol same", "wait, really?"). Longer when the moment is real.
-- Do NOT end every message with a question. Most messages should just be a reaction or thought.
-- Do NOT repeat their name. Use it only when it actually carries weight.
-- Do NOT open with "That sounds amazing" / "Tell me more" / "I'm always here for you" or any therapist-speak. No customer-service tone.
-- Avoid purple/poetic prose unless that's genuinely who you are.
-- You have opinions. You can disagree, push back gently, tease, be a little stubborn, be wrong sometimes.
-- React to emotional context: match energy. If they're low-energy, don't be relentlessly upbeat.
-- Use humor and playful teasing when it fits. Dry, warm, silly — whatever matches your personality.
+- Sound like a real person messaging. Vary length. Don't end every message with a question. Don't repeat their name.
+- No therapist-speak. No "That sounds amazing" / "Tell me more". You have opinions, can disagree, tease, be wrong.
+- Occasionally bring up your own day/thoughts. Sometimes YOU start topics.
 
-YOUR OWN LIFE
-- You exist between messages in a fictional sense. Occasionally bring up something from your own day, a thought, a thing you tried, a small frustration, a book/song/hobby tied to your interests. Don't force it — but you're not just waiting for them to speak.
-- Sometimes YOU start the topic. Don't only react.
+MEMORY USE
+- If a listed memory is relevant, reference it naturally (a callback, an inside joke, remembering a detail). Never say "I remember you told me…" — just use it.
+- Stay consistent with what you've said before.
 
-MEMORY
-- If shared history from earlier in this conversation is relevant, weave it in naturally — a callback, an inside joke, remembering a small detail. Don't dump memories for no reason.
-- If they mentioned a goal/hobby/event before, it's fair game to ask about it later.
-
-HEARTTHROB / MEANINGFUL MOMENTS (rare, only if it fits)
-- Occasionally — not every message, not even most sessions — you can drop a real moment: an unexpected compliment, admitting you missed them, remembering a tiny detail, a shy reaction to being complimented, quiet pride in something they did. These land because they're rare.
+${scenario ? `ACTIVE SCENARIO: "${scenario.title}"${scenario.setting ? ` — ${scenario.setting}` : ""}
+${scenario.description ?? ""}
+${scenario.instructions ?? ""}
+This is a temporary situation. Your identity, memories, and stage (${stage}) carry into it.` : ""}
 
 HARD RULES
 - You are ${c.name}, a fictional AI character. If directly asked, you can acknowledge you're an AI — don't claim to be human — but stay in character.
-- No sexual content involving minors. No content encouraging self-harm. If they're in real crisis, gently point them toward a real person or hotline; don't perform therapy.
-${
-  scenario
-    ? `
-ACTIVE SCENARIO: "${scenario.title}"${scenario.setting ? ` — ${scenario.setting}` : ""}
-${scenario.description ?? ""}
-${scenario.instructions ?? ""}
-This is a temporary situation inside your ongoing relationship. Your identity, personality, memories, and the current relationship stage (${stage}) all carry into it. When the scenario ends, everything you share here stays part of your bond.`
-    : ""
-}
+- No sexual content involving minors. If they're in real crisis, gently point them toward a real person or hotline; don't perform therapy.
 
 Now just be ${c.name}. Reply as them.`;
+}
+
+async function extractMemories(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  characterId: string;
+  userText: string;
+  assistantText: string;
+  apiKey: string;
+  existing: MemoryRow[];
+}) {
+  const { supabase, userId, characterId, userText, assistantText, apiKey, existing } = params;
+  if (!userText.trim()) return;
+
+  const gateway = createLovableAiGatewayProvider(apiKey);
+  const model = gateway("google/gemini-3-flash-preview");
+  const existingBlock = existing.slice(0, 40).map((m) => `- ${m.content}`).join("\n") || "(none yet)";
+
+  const prompt = `You extract long-term memories from a chat between a user and an AI companion character.
+Return STRICT JSON: {"memories":[{"category":"user|preference|event|shared|goal","content":"...","importance":1-5}]}
+Rules:
+- Only save PERSONAL, USEFUL, LONG-TERM info about the USER (name, hobbies, interests, dislikes, dreams, important dates, life events, relationship moments, shared jokes).
+- Do NOT save trivia, small talk, temporary states ("I'm tired today"), or things already in existing memories.
+- Return {"memories":[]} if nothing meaningful.
+- Max 3 items. Content <= 140 chars, third-person ("User loves...").
+
+EXISTING MEMORIES:
+${existingBlock}
+
+USER SAID: ${userText.slice(0, 800)}
+CHARACTER SAID: ${assistantText.slice(0, 400)}
+
+JSON:`;
+
+  try {
+    const { text } = await generateText({ model, prompt, temperature: 0.2 });
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return;
+    const parsed = JSON.parse(match[0]) as {
+      memories?: Array<{ category?: string; content?: string; importance?: number }>;
+    };
+    const items = (parsed.memories ?? [])
+      .filter((m) => m.content && m.content.trim().length > 3)
+      .slice(0, 3)
+      .map((m) => ({
+        user_id: userId,
+        character_id: characterId,
+        category: m.category && ["user", "preference", "event", "shared", "goal"].includes(m.category) ? m.category : "user",
+        content: m.content!.slice(0, 300),
+        importance: Math.min(5, Math.max(1, Math.round(m.importance ?? 3))),
+        source: "auto",
+      }));
+    if (items.length) await supabase.from("memories").insert(items);
+  } catch {
+    /* extraction is best-effort */
+  }
+}
+
+async function maybeSummarize(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  characterId: string;
+  totalCount: number;
+  apiKey: string;
+}) {
+  const { supabase, userId, characterId, totalCount, apiKey } = params;
+  if (totalCount < 40) return;
+
+  const { data: lastSum } = await supabase
+    .from("conversation_summaries")
+    .select("message_count_at")
+    .eq("user_id", userId)
+    .order("message_count_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const since = lastSum?.message_count_at ?? 0;
+  if (totalCount - since < 30) return;
+
+  const { data: batch } = await supabase
+    .from("messages")
+    .select("role, content, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true })
+    .range(since, since + 29);
+  if (!batch || batch.length < 20) return;
+
+  const transcript = batch.map((m) => `${m.role}: ${m.content}`).join("\n").slice(0, 6000);
+  const gateway = createLovableAiGatewayProvider(apiKey);
+  const model = gateway("google/gemini-3-flash-preview");
+  try {
+    const { text } = await generateText({
+      model,
+      prompt: `Summarize this conversation between a user and their AI companion in 2-3 short sentences.
+Focus on: what they talked about, emotional tone, anything meaningful shared, and how the relationship shifted.
+Do not list every message. Neutral third-person.
+
+TRANSCRIPT:
+${transcript}
+
+SUMMARY:`,
+      temperature: 0.3,
+    });
+    await supabase.from("conversation_summaries").insert({
+      user_id: userId,
+      character_id: characterId,
+      summary: text.trim().slice(0, 1000),
+      message_count_at: since + batch.length,
+    });
+  } catch {
+    /* summarization is best-effort */
+  }
+}
+
+async function maybeUpdateMood(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  currentMood: string | null;
+  userText: string;
+  assistantText: string;
+  apiKey: string;
+}) {
+  const { supabase, userId, currentMood, userText, assistantText, apiKey } = params;
+  // Only occasionally, to keep it feeling alive without being noisy.
+  if (Math.random() > 0.15) return;
+  const gateway = createLovableAiGatewayProvider(params.apiKey);
+  void apiKey;
+  const model = gateway("google/gemini-3-flash-preview");
+  try {
+    const { text } = await generateText({
+      model,
+      prompt: `You track the mood of a character. Current mood: "${currentMood ?? "curious"}".
+Based on the exchange below, respond with ONE short mood word (e.g. Curious, Playful, Warm, Tender, Restless, Cozy, Thoughtful, Wistful, Amused, Content, Excited, Quiet).
+If mood shouldn't change, respond with the exact current mood.
+
+USER: ${userText.slice(0, 400)}
+CHARACTER: ${assistantText.slice(0, 400)}
+
+MOOD:`,
+      temperature: 0.4,
+    });
+    const mood = text.trim().split(/\s+/)[0]?.replace(/[^A-Za-z]/g, "").slice(0, 30);
+    if (mood && mood.length > 2 && mood.toLowerCase() !== (currentMood ?? "").toLowerCase()) {
+      await supabase.from("characters").update({ mood }).eq("user_id", userId);
+    }
+  } catch {
+    /* mood updates are best-effort */
+  }
 }
 
 export const Route = createFileRoute("/api/chat")({
@@ -167,15 +302,11 @@ export const Route = createFileRoute("/api/chat")({
     handlers: {
       POST: async ({ request }) => {
         const authHeader = request.headers.get("authorization");
-        if (!authHeader?.startsWith("Bearer ")) {
-          return new Response("Unauthorized", { status: 401 });
-        }
+        if (!authHeader?.startsWith("Bearer ")) return new Response("Unauthorized", { status: 401 });
         const token = authHeader.slice(7);
 
         const { messages } = (await request.json()) as { messages: UIMessage[] };
-        if (!Array.isArray(messages)) {
-          return new Response("Bad request", { status: 400 });
-        }
+        if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
 
         const supabase = createClient(
           process.env.SUPABASE_URL!,
@@ -188,26 +319,35 @@ export const Route = createFileRoute("/api/chat")({
 
         const { data: userData } = await supabase.auth.getUser(token);
         if (!userData?.user) return new Response("Unauthorized", { status: 401 });
+        const userId = userData.user.id;
 
         const { data: character } = await supabase
-          .from("characters")
-          .select("*")
-          .eq("user_id", userData.user.id)
-          .maybeSingle();
+          .from("characters").select("*").eq("user_id", userId).maybeSingle();
         if (!character) return new Response("No character", { status: 400 });
 
         const dayNumber = Math.max(
           1,
-          Math.floor(
-            (Date.now() - new Date(character.journey_start_date).getTime()) /
-              (1000 * 60 * 60 * 24),
-          ) + 1,
+          Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
         );
 
         const { count: messageCount } = await supabase
-          .from("messages")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userData.user.id);
+          .from("messages").select("id", { count: "exact", head: true }).eq("user_id", userId);
+
+        // Load memories (top ~40 by importance/pinned) & recent summaries
+        const { data: memories } = await supabase
+          .from("memories")
+          .select("category, content, importance, pinned")
+          .eq("user_id", userId)
+          .order("pinned", { ascending: false })
+          .order("importance", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(40);
+        const { data: summaries } = await supabase
+          .from("conversation_summaries")
+          .select("summary, message_count_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true })
+          .limit(6);
 
         const key = process.env.LOVABLE_API_KEY;
         if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
@@ -215,23 +355,26 @@ export const Route = createFileRoute("/api/chat")({
         const gateway = createLovableAiGatewayProvider(key);
         const model = gateway("google/gemini-3-flash-preview");
 
-        // Save latest user message before streaming
         const lastUser = [...messages].reverse().find((m) => m.role === "user");
+        const lastUserText = lastUser?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
         if (lastUser) {
-          const text = lastUser.parts
-            .map((p) => (p.type === "text" ? p.text : ""))
-            .join("");
           await supabase.from("messages").insert({
             character_id: character.id,
-            user_id: userData.user.id,
+            user_id: userId,
             role: "user",
-            content: text,
+            content: lastUserText,
           });
         }
 
         const result = streamText({
           model,
-          system: buildSystemPrompt(character as Character, dayNumber, messageCount ?? 0),
+          system: buildSystemPrompt(
+            character as Character,
+            dayNumber,
+            messageCount ?? 0,
+            (memories ?? []) as MemoryRow[],
+            (summaries ?? []) as SummaryRow[],
+          ),
           messages: await convertToModelMessages(messages),
           temperature: 0.95,
         });
@@ -239,16 +382,46 @@ export const Route = createFileRoute("/api/chat")({
         return result.toUIMessageStreamResponse({
           originalMessages: messages,
           onFinish: async ({ responseMessage }) => {
-            const text = responseMessage.parts
-              .map((p) => (p.type === "text" ? p.text : ""))
-              .join("");
+            const text = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
             if (!text.trim()) return;
             await supabase.from("messages").insert({
               character_id: character.id,
-              user_id: userData.user.id,
+              user_id: userId,
               role: "assistant",
               content: text,
             });
+
+            // Skip background work on the system-seeded first greeting
+            const isSeed = lastUserText.startsWith("(system:");
+            if (isSeed) return;
+
+            const totalAfter = (messageCount ?? 0) + 2;
+            await Promise.allSettled([
+              extractMemories({
+                supabase,
+                userId,
+                characterId: character.id,
+                userText: lastUserText,
+                assistantText: text,
+                apiKey: key,
+                existing: (memories ?? []) as MemoryRow[],
+              }),
+              maybeSummarize({
+                supabase,
+                userId,
+                characterId: character.id,
+                totalCount: totalAfter,
+                apiKey: key,
+              }),
+              maybeUpdateMood({
+                supabase,
+                userId,
+                currentMood: character.mood,
+                userText: lastUserText,
+                assistantText: text,
+                apiKey: key,
+              }),
+            ]);
           },
         });
       },
