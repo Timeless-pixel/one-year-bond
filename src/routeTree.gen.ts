@@ -14,6 +14,8 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiGeneratePortraitRouteImport } from './routes/api/generate-portrait'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as AuthenticatedStoryRouteImport } from './routes/_authenticated/story'
+import { Route as AuthenticatedMemoriesRouteImport } from './routes/_authenticated/memories'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
@@ -43,6 +45,16 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedStoryRoute = AuthenticatedStoryRouteImport.update({
+  id: '/story',
+  path: '/story',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMemoriesRoute = AuthenticatedMemoriesRouteImport.update({
+  id: '/memories',
+  path: '/memories',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedHomeRoute = AuthenticatedHomeRouteImport.update({
   id: '/home',
   path: '/home',
@@ -71,6 +83,8 @@ export interface FileRoutesByFullPath {
   '/chat': typeof AuthenticatedChatRoute
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
+  '/memories': typeof AuthenticatedMemoriesRoute
+  '/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
 }
@@ -81,6 +95,8 @@ export interface FileRoutesByTo {
   '/chat': typeof AuthenticatedChatRoute
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
+  '/memories': typeof AuthenticatedMemoriesRoute
+  '/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
 }
@@ -93,6 +109,8 @@ export interface FileRoutesById {
   '/_authenticated/chat': typeof AuthenticatedChatRoute
   '/_authenticated/create': typeof AuthenticatedCreateRoute
   '/_authenticated/home': typeof AuthenticatedHomeRoute
+  '/_authenticated/memories': typeof AuthenticatedMemoriesRoute
+  '/_authenticated/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
 }
@@ -105,6 +123,8 @@ export interface FileRouteTypes {
     | '/chat'
     | '/create'
     | '/home'
+    | '/memories'
+    | '/story'
     | '/api/chat'
     | '/api/generate-portrait'
   fileRoutesByTo: FileRoutesByTo
@@ -115,6 +135,8 @@ export interface FileRouteTypes {
     | '/chat'
     | '/create'
     | '/home'
+    | '/memories'
+    | '/story'
     | '/api/chat'
     | '/api/generate-portrait'
   id:
@@ -126,6 +148,8 @@ export interface FileRouteTypes {
     | '/_authenticated/chat'
     | '/_authenticated/create'
     | '/_authenticated/home'
+    | '/_authenticated/memories'
+    | '/_authenticated/story'
     | '/api/chat'
     | '/api/generate-portrait'
   fileRoutesById: FileRoutesById
@@ -175,6 +199,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/story': {
+      id: '/_authenticated/story'
+      path: '/story'
+      fullPath: '/story'
+      preLoaderRoute: typeof AuthenticatedStoryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/memories': {
+      id: '/_authenticated/memories'
+      path: '/memories'
+      fullPath: '/memories'
+      preLoaderRoute: typeof AuthenticatedMemoriesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/home': {
       id: '/_authenticated/home'
       path: '/home'
@@ -211,6 +249,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChatRoute: typeof AuthenticatedChatRoute
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
   AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
+  AuthenticatedMemoriesRoute: typeof AuthenticatedMemoriesRoute
+  AuthenticatedStoryRoute: typeof AuthenticatedStoryRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -218,6 +258,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChatRoute: AuthenticatedChatRoute,
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
   AuthenticatedHomeRoute: AuthenticatedHomeRoute,
+  AuthenticatedMemoriesRoute: AuthenticatedMemoriesRoute,
+  AuthenticatedStoryRoute: AuthenticatedStoryRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
