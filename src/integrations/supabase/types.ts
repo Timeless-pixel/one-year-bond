@@ -92,6 +92,36 @@ export type Database = {
         }
         Relationships: []
       }
+      conversation_summaries: {
+        Row: {
+          character_id: string
+          created_at: string
+          id: string
+          message_count_at: number
+          summary: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          id?: string
+          message_count_at?: number
+          summary: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          id?: string
+          message_count_at?: number
+          summary?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       image_generations: {
         Row: {
           character_id: string | null
@@ -130,6 +160,45 @@ export type Database = {
           },
         ]
       }
+      memories: {
+        Row: {
+          category: string
+          character_id: string
+          content: string
+          created_at: string
+          id: string
+          importance: number
+          pinned: boolean
+          source: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string
+          character_id: string
+          content: string
+          created_at?: string
+          id?: string
+          importance?: number
+          pinned?: boolean
+          source?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          character_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          importance?: number
+          pinned?: boolean
+          source?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           character_id: string
@@ -164,6 +233,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      milestones: {
+        Row: {
+          character_id: string
+          created_at: string
+          day: number
+          description: string | null
+          id: string
+          kind: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          day: number
+          description?: string | null
+          id?: string
+          kind: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          day?: number
+          description?: string | null
+          id?: string
+          kind?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
