@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getMyCharacter } from "@/lib/character.functions";
+import { getMyCharacter, listMemories } from "@/lib/character.functions";
 import { AppShell } from "@/components/AppShell";
 import { useEffect } from "react";
 
