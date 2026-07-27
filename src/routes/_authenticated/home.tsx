@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getMyCharacter } from "@/lib/character.functions";
+import { getMyCharacter, listMemories } from "@/lib/character.functions";
 import { AppShell } from "@/components/AppShell";
 import { useEffect } from "react";
 
@@ -24,10 +24,16 @@ function computeDay(startDate: string) {
 
 function HomePage() {
   const fetchCharacter = useServerFn(getMyCharacter);
+  const fetchMemories = useServerFn(listMemories);
   const navigate = useNavigate();
   const { data: character, isLoading } = useQuery({
     queryKey: ["character"],
     queryFn: () => fetchCharacter(),
+  });
+  const { data: memories = [] } = useQuery({
+    queryKey: ["memories"],
+    queryFn: () => fetchMemories(),
+    enabled: !!character,
   });
 
   useEffect(() => {
@@ -119,6 +125,23 @@ function HomePage() {
                 You're currently {character.relationship_stage?.toLowerCase() ?? "getting to know each other"}.
               </p>
             </div>
+
+            {(() => {
+              const latest = (memories as Array<{ id: string; content: string; category: string; created_at: string }>).find(
+                (m) => m.category !== "character",
+              );
+              if (!latest) return null;
+              return (
+                <Link to="/memories" className="glass block rounded-3xl p-7 transition hover:bg-white/5">
+                  <div className="text-xs uppercase tracking-widest text-muted-foreground">Your latest memory</div>
+                  <p className="mt-2 text-sm">{latest.content}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Remembered {new Date(latest.created_at).toLocaleDateString()}
+                  </p>
+                </Link>
+              );
+            })()}
+
 
             <Link
               to="/chat"

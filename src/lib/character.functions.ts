@@ -162,7 +162,11 @@ export const getPortraitAllowance = createServerFn({ method: "GET" })
 
 // -------------------- Memories --------------------
 
-const MEMORY_CATEGORIES = ["user", "preference", "event", "shared", "character", "goal"] as const;
+// Accept both legacy + new category keys so existing rows keep working.
+const MEMORY_CATEGORIES = [
+  "user", "preference", "event", "shared", "character", "goal",
+  "likes", "moment", "relationship",
+] as const;
 
 export const listMemories = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -245,6 +249,54 @@ export const deleteMemory = createServerFn({ method: "POST" })
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+export const deleteAllMemories = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    // Never wipe the character's own self-memories (backstory/goals/etc.)
+    const { error } = await context.supabase
+      .from("memories")
+      .delete()
+      .eq("user_id", context.userId)
+      .neq("category", "character");
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const clearConversation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { error } = await context.supabase
+      .from("messages")
+      .delete()
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    await context.supabase
+      .from("conversation_summaries")
+      .delete()
+      .eq("user_id", context.userId);
+    return { ok: true };
+  });
+
+export const exportUserData = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const [character, memories, messages, milestones, summaries] = await Promise.all([
+      context.supabase.from("characters").select("*").eq("user_id", context.userId).maybeSingle(),
+      context.supabase.from("memories").select("*").eq("user_id", context.userId),
+      context.supabase.from("messages").select("*").eq("user_id", context.userId).order("created_at"),
+      context.supabase.from("milestones").select("*").eq("user_id", context.userId).order("day"),
+      context.supabase.from("conversation_summaries").select("*").eq("user_id", context.userId),
+    ]);
+    return {
+      exported_at: new Date().toISOString(),
+      character: character.data,
+      memories: memories.data ?? [],
+      messages: messages.data ?? [],
+      milestones: milestones.data ?? [],
+      conversation_summaries: summaries.data ?? [],
+    };
   });
 
 // -------------------- Milestones / Story --------------------

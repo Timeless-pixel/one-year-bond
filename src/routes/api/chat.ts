@@ -357,6 +357,36 @@ export const Route = createFileRoute("/api/chat")({
 
         const lastUser = [...messages].reverse().find((m) => m.role === "user");
         const lastUserText = lastUser?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
+
+        // Explicit memory commands: "remember that ..." / "forget that ..."
+        const rememberMatch = lastUserText.match(/^\s*(?:please\s+)?remember\s+(?:that\s+)?(.{3,300}?)[.!?]?\s*$/i);
+        const forgetMatch = lastUserText.match(/^\s*(?:please\s+)?forget\s+(?:that\s+)?(.{3,200}?)[.!?]?\s*$/i);
+        let explicitMemoryNote = "";
+        if (rememberMatch) {
+          const content = `User asked to remember: ${rememberMatch[1].trim()}`;
+          await supabase.from("memories").insert({
+            user_id: userId,
+            character_id: character.id,
+            category: "user",
+            content,
+            importance: 5,
+            source: "manual",
+            pinned: true,
+          });
+          explicitMemoryNote = `\nTHE USER JUST EXPLICITLY ASKED YOU TO REMEMBER THIS. Acknowledge it warmly and naturally — do not say "saved to memory" or sound like a bot. Something like "Okay, noted." in your own voice.`;
+        } else if (forgetMatch) {
+          const keyword = forgetMatch[1].trim().slice(0, 80);
+          if (keyword.length >= 3) {
+            await supabase
+              .from("memories")
+              .delete()
+              .eq("user_id", userId)
+              .neq("category", "character")
+              .ilike("content", `%${keyword}%`);
+          }
+          explicitMemoryNote = `\nTHE USER JUST ASKED YOU TO FORGET SOMETHING. Acknowledge it gently in your own voice — don't be robotic about it.`;
+        }
+
         if (lastUser) {
           await supabase.from("messages").insert({
             character_id: character.id,
@@ -374,7 +404,7 @@ export const Route = createFileRoute("/api/chat")({
             messageCount ?? 0,
             (memories ?? []) as MemoryRow[],
             (summaries ?? []) as SummaryRow[],
-          ),
+          ) + explicitMemoryNote,
           messages: await convertToModelMessages(messages),
           temperature: 0.95,
         });
