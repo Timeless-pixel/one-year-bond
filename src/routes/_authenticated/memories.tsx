@@ -134,7 +134,7 @@ function MemoriesPage() {
 
   const grouped = BUCKETS.map((b) => ({
     ...b,
-    items: (memories as Memory[]).filter((m) => b.matches.includes(m.category)),
+    items: (memories as Memory[]).filter((m) => (b.matches as readonly string[]).includes(m.category)),
   }));
 
   async function handleExport() {
