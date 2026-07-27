@@ -100,7 +100,7 @@ function MemoriesPage() {
 
   const addMut = useMutation({
     mutationFn: (input: { content: string; category: string }) =>
-      create({ data: { content: input.content, category: input.category as never, importance: 3, pinned: false } }),
+      create({ data: { content: input.content, category: input.category, importance: 3, pinned: false } } as never),
     onSuccess: () => { invalidate(); toast.success("Memory saved"); },
     onError: (e: Error) => toast.error(e.message),
   });
