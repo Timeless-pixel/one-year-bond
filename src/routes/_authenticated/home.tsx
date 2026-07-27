@@ -24,10 +24,16 @@ function computeDay(startDate: string) {
 
 function HomePage() {
   const fetchCharacter = useServerFn(getMyCharacter);
+  const fetchMemories = useServerFn(listMemories);
   const navigate = useNavigate();
   const { data: character, isLoading } = useQuery({
     queryKey: ["character"],
     queryFn: () => fetchCharacter(),
+  });
+  const { data: memories = [] } = useQuery({
+    queryKey: ["memories"],
+    queryFn: () => fetchMemories(),
+    enabled: !!character,
   });
 
   useEffect(() => {
