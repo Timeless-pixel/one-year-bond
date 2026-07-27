@@ -404,7 +404,7 @@ export const Route = createFileRoute("/api/chat")({
             messageCount ?? 0,
             (memories ?? []) as MemoryRow[],
             (summaries ?? []) as SummaryRow[],
-          ),
+          ) + explicitMemoryNote,
           messages: await convertToModelMessages(messages),
           temperature: 0.95,
         });
