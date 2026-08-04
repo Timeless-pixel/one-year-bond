@@ -63,6 +63,21 @@ interface CharacterRow {
   relationship_stage: string | null;
 }
 
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/** supabase.auth.getSession() can hang on a stuck lock — never block the send on it. */
+async function getAccessToken(): Promise<string | undefined> {
+  try {
+    const result = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+    ]);
+    return result?.data?.session?.access_token;
+  } catch {
+    return undefined;
+  }
+}
+
 function ChatWindow({
   character,
   initialMessages,
@@ -82,34 +97,63 @@ function ChatWindow({
     [initialMessages],
   );
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
         fetch: async (input, init) => {
-          const { data } = await supabase.auth.getSession();
-          const token = data.session?.access_token;
+          const token = await getAccessToken();
           const headers = new Headers(init?.headers);
           if (token) headers.set("Authorization", `Bearer ${token}`);
-          return fetch(input, { ...init, headers });
+
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+          if (init?.signal) {
+            init.signal.addEventListener("abort", () => controller.abort(), { once: true });
+          }
+          try {
+            const res = await fetch(input, { ...init, headers, signal: controller.signal });
+            if (!res.ok) {
+              const detail = await res.text().catch(() => "");
+              throw new Error(
+                res.status === 401
+                  ? "Your session expired. Please sign in again."
+                  : detail || "Something went wrong while trying to respond. Please try again.",
+              );
+            }
+            return res;
+          } finally {
+            clearTimeout(timeout);
+          }
         },
       }),
     [],
   );
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, setMessages } = useChat({
     id: character.id,
     messages: seed,
     transport,
+    onError: (err) => {
+      const aborted = /abort/i.test(err?.message ?? "");
+      setErrorMsg(
+        aborted
+          ? `${character.name} is taking a little longer than expected. Try again?`
+          : err?.message || "Something went wrong while trying to respond. Please try again.",
+      );
+    },
   });
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const sendingRef = useRef(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, status]);
+  }, [messages, status, errorMsg]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -117,20 +161,44 @@ function ChatWindow({
 
   const isBusy = status === "submitted" || status === "streaming";
 
+  async function send(text: string) {
+    if (!text || sendingRef.current || isBusy) return;
+    sendingRef.current = true;
+    setErrorMsg(null);
+    try {
+      await sendMessage({ text });
+    } finally {
+      sendingRef.current = false;
+    }
+  }
+
   async function submit() {
     const text = input.trim();
-    if (!text || isBusy) return;
+    if (!text || isBusy || sendingRef.current) return;
     setInput("");
-    await sendMessage({ text });
+    await send(text);
+  }
+
+  async function retry() {
+    setErrorMsg(null);
+    // Drop the trailing user message and resend it.
+    const last = [...messages].reverse().find((m) => m.role === "user");
+    const text = last?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
+    if (!text) return;
+    setMessages(messages.filter((m) => m.id !== last!.id));
+    await send(text);
   }
 
   // Auto-generate first message if empty
-  const [greeted, setGreeted] = useState(false);
+  const greetedRef = useRef(false);
   useEffect(() => {
-    if (greeted || messages.length > 0) return;
-    setGreeted(true);
-    sendMessage({ text: "(system: user just met you for the first time — greet them naturally in-character, one or two sentences.)" });
-  }, [greeted, messages.length, sendMessage]);
+    if (greetedRef.current || messages.length > 0) return;
+    greetedRef.current = true;
+    void send(
+      "(system: user just met you for the first time — greet them naturally in-character, one or two sentences.)",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
 
   return (
     <div className="mx-auto flex h-[100dvh] max-w-3xl flex-col px-4 pt-4 md:pt-6">
