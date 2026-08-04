@@ -297,163 +297,240 @@ MOOD:`,
   }
 }
 
+/** Never let a background/context query stall the user-facing reply. */
+async function safe<T>(label: string, p: PromiseLike<T>, fallback: T, ms = 5000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(p),
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => {
+          console.warn(`[chat] ${label} timed out after ${ms}ms — using fallback`);
+          resolve(fallback);
+        }, ms);
+      }),
+    ]);
+  } catch (e) {
+    console.warn(`[chat] ${label} failed:`, e instanceof Error ? e.message : e);
+    return fallback;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+const MAX_MEMORIES = 20;
+const MAX_SUMMARIES = 3;
+const MAX_TURNS = 24;
+
 export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const authHeader = request.headers.get("authorization");
-        if (!authHeader?.startsWith("Bearer ")) return new Response("Unauthorized", { status: 401 });
-        const token = authHeader.slice(7);
+        try {
+          const authHeader = request.headers.get("authorization");
+          if (!authHeader?.startsWith("Bearer ")) return new Response("Unauthorized", { status: 401 });
+          const token = authHeader.slice(7);
 
-        const { messages } = (await request.json()) as { messages: UIMessage[] };
-        if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
-
-        const supabase = createClient(
-          process.env.SUPABASE_URL!,
-          process.env.SUPABASE_PUBLISHABLE_KEY!,
-          {
-            global: { headers: { Authorization: `Bearer ${token}` } },
-            auth: { persistSession: false, autoRefreshToken: false },
-          },
-        );
-
-        const { data: userData } = await supabase.auth.getUser(token);
-        if (!userData?.user) return new Response("Unauthorized", { status: 401 });
-        const userId = userData.user.id;
-
-        const { data: character } = await supabase
-          .from("characters").select("*").eq("user_id", userId).maybeSingle();
-        if (!character) return new Response("No character", { status: 400 });
-
-        const dayNumber = Math.max(
-          1,
-          Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
-        );
-
-        const { count: messageCount } = await supabase
-          .from("messages").select("id", { count: "exact", head: true }).eq("user_id", userId);
-
-        // Load memories (top ~40 by importance/pinned) & recent summaries
-        const { data: memories } = await supabase
-          .from("memories")
-          .select("category, content, importance, pinned")
-          .eq("user_id", userId)
-          .order("pinned", { ascending: false })
-          .order("importance", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(40);
-        const { data: summaries } = await supabase
-          .from("conversation_summaries")
-          .select("summary, message_count_at")
-          .eq("user_id", userId)
-          .order("created_at", { ascending: true })
-          .limit(6);
-
-        const key = process.env.LOVABLE_API_KEY;
-        if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
-
-        const gateway = createLovableAiGatewayProvider(key);
-        const model = gateway("google/gemini-3-flash-preview");
-
-        const lastUser = [...messages].reverse().find((m) => m.role === "user");
-        const lastUserText = lastUser?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
-
-        // Explicit memory commands: "remember that ..." / "forget that ..."
-        const rememberMatch = lastUserText.match(/^\s*(?:please\s+)?remember\s+(?:that\s+)?(.{3,300}?)[.!?]?\s*$/i);
-        const forgetMatch = lastUserText.match(/^\s*(?:please\s+)?forget\s+(?:that\s+)?(.{3,200}?)[.!?]?\s*$/i);
-        let explicitMemoryNote = "";
-        if (rememberMatch) {
-          const content = `User asked to remember: ${rememberMatch[1].trim()}`;
-          await supabase.from("memories").insert({
-            user_id: userId,
-            character_id: character.id,
-            category: "user",
-            content,
-            importance: 5,
-            source: "manual",
-            pinned: true,
-          });
-          explicitMemoryNote = `\nTHE USER JUST EXPLICITLY ASKED YOU TO REMEMBER THIS. Acknowledge it warmly and naturally — do not say "saved to memory" or sound like a bot. Something like "Okay, noted." in your own voice.`;
-        } else if (forgetMatch) {
-          const keyword = forgetMatch[1].trim().slice(0, 80);
-          if (keyword.length >= 3) {
-            await supabase
-              .from("memories")
-              .delete()
-              .eq("user_id", userId)
-              .neq("category", "character")
-              .ilike("content", `%${keyword}%`);
+          let messages: UIMessage[];
+          try {
+            ({ messages } = (await request.json()) as { messages: UIMessage[] });
+          } catch {
+            return new Response("Bad request", { status: 400 });
           }
-          explicitMemoryNote = `\nTHE USER JUST ASKED YOU TO FORGET SOMETHING. Acknowledge it gently in your own voice — don't be robotic about it.`;
-        }
+          if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
 
-        if (lastUser) {
-          await supabase.from("messages").insert({
-            character_id: character.id,
-            user_id: userId,
-            role: "user",
-            content: lastUserText,
+          const key = process.env.LOVABLE_API_KEY;
+          if (!key) return new Response("The companion is unavailable right now.", { status: 500 });
+
+          const supabase = createClient(
+            process.env.SUPABASE_URL!,
+            process.env.SUPABASE_PUBLISHABLE_KEY!,
+            {
+              global: { headers: { Authorization: `Bearer ${token}` } },
+              auth: { persistSession: false, autoRefreshToken: false },
+            },
+          );
+
+          const userData = await safe("auth.getUser", supabase.auth.getUser(token), { data: { user: null } } as never, 8000);
+          const user = (userData as { data?: { user?: { id: string } | null } })?.data?.user;
+          if (!user) return new Response("Unauthorized", { status: 401 });
+          const userId = user.id;
+
+          const charRes = await safe(
+            "load character",
+            supabase.from("characters").select("*").eq("user_id", userId).maybeSingle(),
+            { data: null } as never,
+            8000,
+          );
+          const character = (charRes as { data: Character | null }).data;
+          if (!character) return new Response("No character", { status: 400 });
+
+          const dayNumber = Math.max(
+            1,
+            Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
+          );
+
+          // ---- Phase 2 context: bounded, parallel, and never fatal ----
+          const [countRes, memRes, sumRes] = await Promise.all([
+            safe(
+              "message count",
+              supabase.from("messages").select("id", { count: "exact", head: true }).eq("user_id", userId),
+              { count: 0 } as never,
+            ),
+            safe(
+              "memories",
+              supabase
+                .from("memories")
+                .select("category, content, importance, pinned")
+                .eq("user_id", userId)
+                .order("pinned", { ascending: false })
+                .order("importance", { ascending: false })
+                .order("created_at", { ascending: false })
+                .limit(MAX_MEMORIES),
+              { data: [] } as never,
+            ),
+            safe(
+              "summaries",
+              supabase
+                .from("conversation_summaries")
+                .select("summary, message_count_at")
+                .eq("user_id", userId)
+                .order("created_at", { ascending: false })
+                .limit(MAX_SUMMARIES),
+              { data: [] } as never,
+            ),
+          ]);
+
+          const messageCount = (countRes as { count: number | null }).count ?? 0;
+          const memories = ((memRes as { data: MemoryRow[] | null }).data ?? []).slice(0, MAX_MEMORIES);
+          const summaries = ((sumRes as { data: SummaryRow[] | null }).data ?? []).slice(0, MAX_SUMMARIES).reverse();
+
+          const gateway = createLovableAiGatewayProvider(key);
+          const model = gateway("google/gemini-3-flash-preview");
+
+          const lastUser = [...messages].reverse().find((m) => m.role === "user");
+          const lastUserText = lastUser?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
+
+          // Explicit memory commands: "remember that ..." / "forget that ..."
+          const rememberMatch = lastUserText.match(/^\s*(?:please\s+)?remember\s+(?:that\s+)?(.{3,300}?)[.!?]?\s*$/i);
+          const forgetMatch = lastUserText.match(/^\s*(?:please\s+)?forget\s+(?:that\s+)?(.{3,200}?)[.!?]?\s*$/i);
+          let explicitMemoryNote = "";
+          if (rememberMatch) {
+            const content = `User asked to remember: ${rememberMatch[1].trim()}`;
+            await safe(
+              "insert explicit memory",
+              supabase.from("memories").insert({
+                user_id: userId,
+                character_id: character.id,
+                category: "user",
+                content,
+                importance: 5,
+                source: "manual",
+                pinned: true,
+              }),
+              null as never,
+            );
+            explicitMemoryNote = `\nTHE USER JUST EXPLICITLY ASKED YOU TO REMEMBER THIS. Acknowledge it warmly and naturally — do not say "saved to memory" or sound like a bot. Something like "Okay, noted." in your own voice.`;
+          } else if (forgetMatch) {
+            const keyword = forgetMatch[1].trim().slice(0, 80);
+            if (keyword.length >= 3) {
+              await safe(
+                "delete memory",
+                supabase
+                  .from("memories")
+                  .delete()
+                  .eq("user_id", userId)
+                  .neq("category", "character")
+                  .ilike("content", `%${keyword}%`),
+                null as never,
+              );
+            }
+            explicitMemoryNote = `\nTHE USER JUST ASKED YOU TO FORGET SOMETHING. Acknowledge it gently in your own voice — don't be robotic about it.`;
+          }
+
+          if (lastUser) {
+            await safe(
+              "save user message",
+              supabase.from("messages").insert({
+                character_id: character.id,
+                user_id: userId,
+                role: "user",
+                content: lastUserText,
+              }),
+              null as never,
+            );
+          }
+
+          // Only the recent window goes to the model — older context lives in summaries.
+          const recent = messages.slice(-MAX_TURNS);
+
+          const result = streamText({
+            model,
+            system:
+              buildSystemPrompt(character, dayNumber, messageCount, memories, summaries) + explicitMemoryNote,
+            messages: await convertToModelMessages(recent),
+            temperature: 0.95,
+            onError: ({ error }) => {
+              console.error("[chat] model stream error:", error);
+            },
+          });
+
+          return result.toUIMessageStreamResponse({
+            originalMessages: messages,
+            onError: () => "Something went wrong while trying to respond. Please try again.",
+            onFinish: async ({ responseMessage }) => {
+              const text = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+              if (!text.trim()) return;
+
+              await safe(
+                "save assistant message",
+                supabase.from("messages").insert({
+                  character_id: character.id,
+                  user_id: userId,
+                  role: "assistant",
+                  content: text,
+                }),
+                null as never,
+              );
+
+              // Skip background work on the system-seeded first greeting
+              if (lastUserText.startsWith("(system:")) return;
+
+              // Fire-and-forget: the user's reply is already delivered.
+              void Promise.allSettled([
+                extractMemories({
+                  supabase,
+                  userId,
+                  characterId: character.id,
+                  userText: lastUserText,
+                  assistantText: text,
+                  apiKey: key,
+                  existing: memories,
+                }),
+                maybeSummarize({
+                  supabase,
+                  userId,
+                  characterId: character.id,
+                  totalCount: messageCount + 2,
+                  apiKey: key,
+                }),
+                maybeUpdateMood({
+                  supabase,
+                  userId,
+                  currentMood: character.mood,
+                  userText: lastUserText,
+                  assistantText: text,
+                  apiKey: key,
+                }),
+              ]).catch(() => {});
+            },
+          });
+        } catch (error) {
+          console.error("[chat] fatal:", error);
+          return new Response("Something went wrong while trying to respond. Please try again.", {
+            status: 500,
           });
         }
-
-        const result = streamText({
-          model,
-          system: buildSystemPrompt(
-            character as Character,
-            dayNumber,
-            messageCount ?? 0,
-            (memories ?? []) as MemoryRow[],
-            (summaries ?? []) as SummaryRow[],
-          ) + explicitMemoryNote,
-          messages: await convertToModelMessages(messages),
-          temperature: 0.95,
-        });
-
-        return result.toUIMessageStreamResponse({
-          originalMessages: messages,
-          onFinish: async ({ responseMessage }) => {
-            const text = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
-            if (!text.trim()) return;
-            await supabase.from("messages").insert({
-              character_id: character.id,
-              user_id: userId,
-              role: "assistant",
-              content: text,
-            });
-
-            // Skip background work on the system-seeded first greeting
-            const isSeed = lastUserText.startsWith("(system:");
-            if (isSeed) return;
-
-            const totalAfter = (messageCount ?? 0) + 2;
-            await Promise.allSettled([
-              extractMemories({
-                supabase,
-                userId,
-                characterId: character.id,
-                userText: lastUserText,
-                assistantText: text,
-                apiKey: key,
-                existing: (memories ?? []) as MemoryRow[],
-              }),
-              maybeSummarize({
-                supabase,
-                userId,
-                characterId: character.id,
-                totalCount: totalAfter,
-                apiKey: key,
-              }),
-              maybeUpdateMood({
-                supabase,
-                userId,
-                currentMood: character.mood,
-                userText: lastUserText,
-                assistantText: text,
-                apiKey: key,
-              }),
-            ]);
-          },
-        });
       },
     },
   },
