@@ -255,7 +255,7 @@ function ChatWindow({
               </div>
             );
           })}
-        {status === "submitted" && (
+        {status === "submitted" && !errorMsg && (
           <div className="flex items-center gap-1 text-muted-foreground">
             <div className="mb-1 text-xs">{character.name} is typing</div>
             <span className="inline-flex gap-1">
@@ -267,6 +267,18 @@ function ChatWindow({
                 />
               ))}
             </span>
+          </div>
+        )}
+        {errorMsg && (
+          <div className="glass flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 text-sm text-muted-foreground">
+            <span>{errorMsg}</span>
+            <button
+              onClick={retry}
+              disabled={isBusy}
+              className="btn-primary rounded-xl px-3 py-1.5 text-xs disabled:opacity-50"
+            >
+              Try Again
+            </button>
           </div>
         )}
       </div>
