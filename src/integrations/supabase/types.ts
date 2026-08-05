@@ -22,6 +22,7 @@ export type Database = {
           backstory: string | null
           communication_style: string | null
           created_at: string
+          daily_events_enabled: boolean
           gender: string | null
           goals: string | null
           id: string
@@ -37,6 +38,7 @@ export type Database = {
           relationship_stage: string | null
           relationship_type: string
           style: string
+          surprises_enabled: boolean
           updated_at: string
           user_id: string
         }
@@ -47,6 +49,7 @@ export type Database = {
           backstory?: string | null
           communication_style?: string | null
           created_at?: string
+          daily_events_enabled?: boolean
           gender?: string | null
           goals?: string | null
           id?: string
@@ -62,6 +65,7 @@ export type Database = {
           relationship_stage?: string | null
           relationship_type?: string
           style: string
+          surprises_enabled?: boolean
           updated_at?: string
           user_id: string
         }
@@ -72,6 +76,7 @@ export type Database = {
           backstory?: string | null
           communication_style?: string | null
           created_at?: string
+          daily_events_enabled?: boolean
           gender?: string | null
           goals?: string | null
           id?: string
@@ -87,6 +92,7 @@ export type Database = {
           relationship_stage?: string | null
           relationship_type?: string
           style?: string
+          surprises_enabled?: boolean
           updated_at?: string
           user_id?: string
         }
@@ -206,6 +212,7 @@ export type Database = {
           created_at: string
           id: string
           role: string
+          scenario_session_id: string | null
           user_id: string
         }
         Insert: {
@@ -214,6 +221,7 @@ export type Database = {
           created_at?: string
           id?: string
           role: string
+          scenario_session_id?: string | null
           user_id: string
         }
         Update: {
@@ -222,6 +230,7 @@ export type Database = {
           created_at?: string
           id?: string
           role?: string
+          scenario_session_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -230,6 +239,13 @@ export type Database = {
             columns: ["character_id"]
             isOneToOne: false
             referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_scenario_session_id_fkey"
+            columns: ["scenario_session_id"]
+            isOneToOne: false
+            referencedRelation: "scenario_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -266,6 +282,177 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      scenario_sessions: {
+        Row: {
+          character_id: string
+          completed_at: string | null
+          created_at: string
+          day_started: number
+          id: string
+          last_active_at: string
+          progress: Json
+          recap: string | null
+          scenario_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          character_id: string
+          completed_at?: string | null
+          created_at?: string
+          day_started?: number
+          id?: string
+          last_active_at?: string
+          progress?: Json
+          recap?: string | null
+          scenario_id: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          character_id?: string
+          completed_at?: string | null
+          created_at?: string
+          day_started?: number
+          id?: string
+          last_active_at?: string
+          progress?: Json
+          recap?: string | null
+          scenario_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scenario_sessions_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scenario_sessions_scenario_id_fkey"
+            columns: ["scenario_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scenarios: {
+        Row: {
+          best_for: string[]
+          category: string
+          created_at: string
+          description: string
+          duration_label: string
+          id: string
+          instructions: string | null
+          premise: string | null
+          scenario_type: string
+          setting: string | null
+          slug: string
+          sort_order: number
+          title: string
+          tone: string | null
+        }
+        Insert: {
+          best_for?: string[]
+          category: string
+          created_at?: string
+          description: string
+          duration_label?: string
+          id?: string
+          instructions?: string | null
+          premise?: string | null
+          scenario_type?: string
+          setting?: string | null
+          slug: string
+          sort_order?: number
+          title: string
+          tone?: string | null
+        }
+        Update: {
+          best_for?: string[]
+          category?: string
+          created_at?: string
+          description?: string
+          duration_label?: string
+          id?: string
+          instructions?: string | null
+          premise?: string | null
+          scenario_type?: string
+          setting?: string | null
+          slug?: string
+          sort_order?: number
+          title?: string
+          tone?: string | null
+        }
+        Relationships: []
+      }
+      story_events: {
+        Row: {
+          caption: string | null
+          character_id: string
+          created_at: string
+          day: number
+          description: string | null
+          id: string
+          image_url: string | null
+          kind: string
+          scenario_session_id: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          caption?: string | null
+          character_id: string
+          created_at?: string
+          day?: number
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          kind?: string
+          scenario_session_id?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          caption?: string | null
+          character_id?: string
+          created_at?: string
+          day?: number
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          kind?: string
+          scenario_session_id?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "story_events_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_events_scenario_session_id_fkey"
+            columns: ["scenario_session_id"]
+            isOneToOne: false
+            referencedRelation: "scenario_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

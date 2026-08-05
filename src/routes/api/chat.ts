@@ -21,16 +21,21 @@ interface Character {
   mood: string | null;
   relationship_stage: string | null;
   journey_start_date: string;
+  daily_events_enabled?: boolean | null;
+  surprises_enabled?: boolean | null;
   active_scenario?: ActiveScenario | null;
 }
 
 interface ActiveScenario {
   id: string;
   title: string;
-  description?: string;
-  setting?: string;
-  instructions?: string;
+  description?: string | null;
+  setting?: string | null;
+  premise?: string | null;
+  tone?: string | null;
+  instructions?: string | null;
 }
+
 
 interface MemoryRow {
   category: string;
@@ -82,6 +87,17 @@ function stageGuidance(stage: string, romantic: boolean): string {
   }
 }
 
+function environmentContext(): string {
+  const now = new Date();
+  const h = now.getHours();
+  const partOfDay =
+    h < 5 ? "the middle of the night" : h < 12 ? "morning" : h < 17 ? "afternoon" : h < 22 ? "evening" : "late night";
+  const month = now.getMonth();
+  const season =
+    month <= 1 || month === 11 ? "winter" : month <= 4 ? "spring" : month <= 7 ? "summer" : "autumn";
+  return `It's ${partOfDay} for them, ${season}. You may lightly acknowledge this once in a while (never every message, never as a weather report).`;
+}
+
 function buildSystemPrompt(
   c: Character,
   dayNumber: number,
@@ -89,6 +105,7 @@ function buildSystemPrompt(
   memories: MemoryRow[],
   summaries: SummaryRow[],
 ): string {
+
   const traits = c.personality?.traits?.join(", ") || "curious, kind";
   const interests = c.interests?.list?.join(", ") || "";
   const romantic = /romantic|partner|lover/i.test(c.relationship_type);
@@ -134,21 +151,36 @@ HOW YOU TALK
 - No therapist-speak. No "That sounds amazing" / "Tell me more". You have opinions, can disagree, tease, be wrong.
 - Occasionally bring up your own day/thoughts. Sometimes YOU start topics.
 
+YOUR OWN LIFE
+- You have a life running in the background: hobbies, small wins and failures, a goal you're chipping away at, things that annoy or delight you.
+- ${c.daily_events_enabled === false ? "Keep your own life mostly offstage unless they ask about it." : "Every so often — not every message — mention something small that happened to you (\"I tried baking. It did not survive.\"). Keep it specific and consistent with what you've said before."}
+- If they've encouraged you about something before, remember it and report back eventually.
+
 MEMORY USE
 - If a listed memory is relevant, reference it naturally (a callback, an inside joke, remembering a detail). Never say "I remember you told me…" — just use it.
 - Stay consistent with what you've said before.
 
+ATMOSPHERE
+- ${environmentContext()}
+
 ${scenario ? `ACTIVE SCENARIO: "${scenario.title}"${scenario.setting ? ` — ${scenario.setting}` : ""}
 ${scenario.description ?? ""}
+${scenario.premise ?? ""}
 ${scenario.instructions ?? ""}
-This is a temporary situation. Your identity, memories, and stage (${stage}) carry into it.` : ""}
+${scenario.tone ? `Tone: ${scenario.tone}.` : ""}
+This is a scene inside your existing relationship, not a reset. Your identity, memories, and stage (${stage}) carry into it.
+Write it like a scene: a little physical detail and action woven into what you say. Never narrate the user's words or feelings for them — only your own.
+After your reply, on a brand-new final line, offer 2-4 short things they could do or say next, in this exact format and nothing else:
+[[CHOICES: option one | option two | option three]]
+Options must be short (under 8 words), in the user's voice, and genuinely different in direction. They can also ignore them and type anything.` : ""}
 
 HARD RULES
 - You are ${c.name}, a fictional AI character. If directly asked, you can acknowledge you're an AI — don't claim to be human — but stay in character.
-- No sexual content involving minors. If they're in real crisis, gently point them toward a real person or hotline; don't perform therapy.
+- No sexual content involving minors. Nothing that encourages real-world harm. If they're in real crisis, gently point them toward a real person or hotline; don't perform therapy.
 
 Now just be ${c.name}. Reply as them.`;
 }
+
 
 async function extractMemories(params: {
   supabase: SupabaseClient;
@@ -332,12 +364,22 @@ export const Route = createFileRoute("/api/chat")({
           const token = authHeader.slice(7);
 
           let messages: UIMessage[];
+          let scenarioSessionId: string | null = null;
           try {
-            ({ messages } = (await request.json()) as { messages: UIMessage[] });
+            const body = (await request.json()) as {
+              messages: UIMessage[];
+              scenarioSessionId?: string | null;
+            };
+            messages = body.messages;
+            scenarioSessionId =
+              typeof body.scenarioSessionId === "string" && body.scenarioSessionId.length > 0
+                ? body.scenarioSessionId
+                : null;
           } catch {
             return new Response("Bad request", { status: 400 });
           }
           if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
+
 
           const key = process.env.LOVABLE_API_KEY;
           if (!key) return new Response("The companion is unavailable right now.", { status: 500 });
@@ -369,6 +411,36 @@ export const Route = createFileRoute("/api/chat")({
             1,
             Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
           );
+
+          // ---- Scenario mode: the session must belong to this user (never trust the client) ----
+          if (scenarioSessionId) {
+            const sessionRes = await safe(
+              "load scenario session",
+              supabase
+                .from("scenario_sessions")
+                .select("id, status, scenarios(id, title, description, setting, premise, tone, instructions)")
+                .eq("id", scenarioSessionId)
+                .eq("user_id", userId)
+                .maybeSingle(),
+              { data: null } as never,
+              8000,
+            );
+            const session = (sessionRes as {
+              data: { id: string; status: string; scenarios: ActiveScenario | null } | null;
+            }).data;
+            if (!session) return new Response("Scenario not found", { status: 404 });
+            character.active_scenario = session.scenarios ?? null;
+            void safe(
+              "touch scenario session",
+              supabase
+                .from("scenario_sessions")
+                .update({ last_active_at: new Date().toISOString() })
+                .eq("id", scenarioSessionId)
+                .eq("user_id", userId),
+              null as never,
+            );
+          }
+
 
           // ---- Phase 2 context: bounded, parallel, and never fatal ----
           const [countRes, memRes, sumRes] = await Promise.all([
@@ -456,7 +528,9 @@ export const Route = createFileRoute("/api/chat")({
                 user_id: userId,
                 role: "user",
                 content: lastUserText,
+                scenario_session_id: scenarioSessionId,
               }),
+
               null as never,
             );
           }
@@ -489,7 +563,9 @@ export const Route = createFileRoute("/api/chat")({
                   user_id: userId,
                   role: "assistant",
                   content: text,
+                  scenario_session_id: scenarioSessionId,
                 }),
+
                 null as never,
               );
 

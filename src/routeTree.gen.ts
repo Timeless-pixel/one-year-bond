@@ -15,11 +15,13 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiGeneratePortraitRouteImport } from './routes/api/generate-portrait'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedStoryRouteImport } from './routes/_authenticated/story'
+import { Route as AuthenticatedScenariosRouteImport } from './routes/_authenticated/scenarios'
 import { Route as AuthenticatedMemoriesRouteImport } from './routes/_authenticated/memories'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedCharacterRouteImport } from './routes/_authenticated/character'
+import { Route as AuthenticatedScenarioSessionIdRouteImport } from './routes/_authenticated/scenario.$sessionId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -50,6 +52,11 @@ const AuthenticatedStoryRoute = AuthenticatedStoryRouteImport.update({
   path: '/story',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedScenariosRoute = AuthenticatedScenariosRouteImport.update({
+  id: '/scenarios',
+  path: '/scenarios',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedMemoriesRoute = AuthenticatedMemoriesRouteImport.update({
   id: '/memories',
   path: '/memories',
@@ -75,6 +82,12 @@ const AuthenticatedCharacterRoute = AuthenticatedCharacterRouteImport.update({
   path: '/character',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedScenarioSessionIdRoute =
+  AuthenticatedScenarioSessionIdRouteImport.update({
+    id: '/scenario/$sessionId',
+    path: '/scenario/$sessionId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -84,9 +97,11 @@ export interface FileRoutesByFullPath {
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
   '/memories': typeof AuthenticatedMemoriesRoute
+  '/scenarios': typeof AuthenticatedScenariosRoute
   '/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
+  '/scenario/$sessionId': typeof AuthenticatedScenarioSessionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -96,9 +111,11 @@ export interface FileRoutesByTo {
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
   '/memories': typeof AuthenticatedMemoriesRoute
+  '/scenarios': typeof AuthenticatedScenariosRoute
   '/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
+  '/scenario/$sessionId': typeof AuthenticatedScenarioSessionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -110,9 +127,11 @@ export interface FileRoutesById {
   '/_authenticated/create': typeof AuthenticatedCreateRoute
   '/_authenticated/home': typeof AuthenticatedHomeRoute
   '/_authenticated/memories': typeof AuthenticatedMemoriesRoute
+  '/_authenticated/scenarios': typeof AuthenticatedScenariosRoute
   '/_authenticated/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
+  '/_authenticated/scenario/$sessionId': typeof AuthenticatedScenarioSessionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -124,9 +143,11 @@ export interface FileRouteTypes {
     | '/create'
     | '/home'
     | '/memories'
+    | '/scenarios'
     | '/story'
     | '/api/chat'
     | '/api/generate-portrait'
+    | '/scenario/$sessionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -136,9 +157,11 @@ export interface FileRouteTypes {
     | '/create'
     | '/home'
     | '/memories'
+    | '/scenarios'
     | '/story'
     | '/api/chat'
     | '/api/generate-portrait'
+    | '/scenario/$sessionId'
   id:
     | '__root__'
     | '/'
@@ -149,9 +172,11 @@ export interface FileRouteTypes {
     | '/_authenticated/create'
     | '/_authenticated/home'
     | '/_authenticated/memories'
+    | '/_authenticated/scenarios'
     | '/_authenticated/story'
     | '/api/chat'
     | '/api/generate-portrait'
+    | '/_authenticated/scenario/$sessionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -206,6 +231,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/scenarios': {
+      id: '/_authenticated/scenarios'
+      path: '/scenarios'
+      fullPath: '/scenarios'
+      preLoaderRoute: typeof AuthenticatedScenariosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/memories': {
       id: '/_authenticated/memories'
       path: '/memories'
@@ -241,6 +273,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCharacterRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/scenario/$sessionId': {
+      id: '/_authenticated/scenario/$sessionId'
+      path: '/scenario/$sessionId'
+      fullPath: '/scenario/$sessionId'
+      preLoaderRoute: typeof AuthenticatedScenarioSessionIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -250,7 +289,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
   AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
   AuthenticatedMemoriesRoute: typeof AuthenticatedMemoriesRoute
+  AuthenticatedScenariosRoute: typeof AuthenticatedScenariosRoute
   AuthenticatedStoryRoute: typeof AuthenticatedStoryRoute
+  AuthenticatedScenarioSessionIdRoute: typeof AuthenticatedScenarioSessionIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -259,7 +300,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
   AuthenticatedHomeRoute: AuthenticatedHomeRoute,
   AuthenticatedMemoriesRoute: AuthenticatedMemoriesRoute,
+  AuthenticatedScenariosRoute: AuthenticatedScenariosRoute,
   AuthenticatedStoryRoute: AuthenticatedStoryRoute,
+  AuthenticatedScenarioSessionIdRoute: AuthenticatedScenarioSessionIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

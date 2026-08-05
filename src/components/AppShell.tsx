@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Home, MessageCircle, Sparkles, LogOut, Brain, BookHeart } from "lucide-react";
+import { Home, MessageCircle, Sparkles, LogOut, Brain, BookHeart, Clapperboard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -7,10 +7,12 @@ import type { ReactNode } from "react";
 const nav = [
   { to: "/home", label: "Home", icon: Home },
   { to: "/chat", label: "Chat", icon: MessageCircle },
+  { to: "/scenarios", label: "Scenarios", icon: Clapperboard },
   { to: "/memories", label: "Memories", icon: Brain },
   { to: "/story", label: "Our Story", icon: BookHeart },
   { to: "/character", label: "Character", icon: Sparkles },
 ] as const;
+
 
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
@@ -70,9 +72,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link
               key={n.to}
               to={n.to}
-              className={`flex flex-col items-center gap-0.5 rounded-xl px-4 py-2 text-[11px] transition ${
+              className={`flex flex-col items-center gap-0.5 rounded-xl px-2 py-2 text-[10px] transition ${
                 active ? "text-foreground" : "text-muted-foreground"
               }`}
+
             >
               <n.icon className="h-5 w-5" />
               {n.label}
