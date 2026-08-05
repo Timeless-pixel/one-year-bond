@@ -82,6 +82,17 @@ function stageGuidance(stage: string, romantic: boolean): string {
   }
 }
 
+function environmentContext(): string {
+  const now = new Date();
+  const h = now.getHours();
+  const partOfDay =
+    h < 5 ? "the middle of the night" : h < 12 ? "morning" : h < 17 ? "afternoon" : h < 22 ? "evening" : "late night";
+  const month = now.getMonth();
+  const season =
+    month <= 1 || month === 11 ? "winter" : month <= 4 ? "spring" : month <= 7 ? "summer" : "autumn";
+  return `It's ${partOfDay} for them, ${season}. You may lightly acknowledge this once in a while (never every message, never as a weather report).`;
+}
+
 function buildSystemPrompt(
   c: Character,
   dayNumber: number,
@@ -89,6 +100,7 @@ function buildSystemPrompt(
   memories: MemoryRow[],
   summaries: SummaryRow[],
 ): string {
+
   const traits = c.personality?.traits?.join(", ") || "curious, kind";
   const interests = c.interests?.list?.join(", ") || "";
   const romantic = /romantic|partner|lover/i.test(c.relationship_type);
