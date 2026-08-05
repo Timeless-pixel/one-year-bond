@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiGeneratePortraitRouteImport } from './routes/api/generate-portrait'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedStoryRouteImport } from './routes/_authenticated/story'
+import { Route as AuthenticatedScenariosRouteImport } from './routes/_authenticated/scenarios'
 import { Route as AuthenticatedMemoriesRouteImport } from './routes/_authenticated/memories'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
@@ -48,6 +49,11 @@ const ApiChatRoute = ApiChatRouteImport.update({
 const AuthenticatedStoryRoute = AuthenticatedStoryRouteImport.update({
   id: '/story',
   path: '/story',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedScenariosRoute = AuthenticatedScenariosRouteImport.update({
+  id: '/scenarios',
+  path: '/scenarios',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMemoriesRoute = AuthenticatedMemoriesRouteImport.update({
@@ -84,6 +90,7 @@ export interface FileRoutesByFullPath {
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
   '/memories': typeof AuthenticatedMemoriesRoute
+  '/scenarios': typeof AuthenticatedScenariosRoute
   '/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByTo {
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
   '/memories': typeof AuthenticatedMemoriesRoute
+  '/scenarios': typeof AuthenticatedScenariosRoute
   '/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
@@ -110,6 +118,7 @@ export interface FileRoutesById {
   '/_authenticated/create': typeof AuthenticatedCreateRoute
   '/_authenticated/home': typeof AuthenticatedHomeRoute
   '/_authenticated/memories': typeof AuthenticatedMemoriesRoute
+  '/_authenticated/scenarios': typeof AuthenticatedScenariosRoute
   '/_authenticated/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/create'
     | '/home'
     | '/memories'
+    | '/scenarios'
     | '/story'
     | '/api/chat'
     | '/api/generate-portrait'
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/create'
     | '/home'
     | '/memories'
+    | '/scenarios'
     | '/story'
     | '/api/chat'
     | '/api/generate-portrait'
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/_authenticated/create'
     | '/_authenticated/home'
     | '/_authenticated/memories'
+    | '/_authenticated/scenarios'
     | '/_authenticated/story'
     | '/api/chat'
     | '/api/generate-portrait'
@@ -206,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStoryRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/scenarios': {
+      id: '/_authenticated/scenarios'
+      path: '/scenarios'
+      fullPath: '/scenarios'
+      preLoaderRoute: typeof AuthenticatedScenariosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/memories': {
       id: '/_authenticated/memories'
       path: '/memories'
@@ -250,6 +269,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
   AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
   AuthenticatedMemoriesRoute: typeof AuthenticatedMemoriesRoute
+  AuthenticatedScenariosRoute: typeof AuthenticatedScenariosRoute
   AuthenticatedStoryRoute: typeof AuthenticatedStoryRoute
 }
 
@@ -259,6 +279,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
   AuthenticatedHomeRoute: AuthenticatedHomeRoute,
   AuthenticatedMemoriesRoute: AuthenticatedMemoriesRoute,
+  AuthenticatedScenariosRoute: AuthenticatedScenariosRoute,
   AuthenticatedStoryRoute: AuthenticatedStoryRoute,
 }
 
