@@ -563,7 +563,9 @@ export const Route = createFileRoute("/api/chat")({
                   user_id: userId,
                   role: "assistant",
                   content: text,
+                  scenario_session_id: scenarioSessionId,
                 }),
+
                 null as never,
               );
 
