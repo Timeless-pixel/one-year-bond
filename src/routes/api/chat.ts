@@ -412,6 +412,36 @@ export const Route = createFileRoute("/api/chat")({
             Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
           );
 
+          // ---- Scenario mode: the session must belong to this user (never trust the client) ----
+          if (scenarioSessionId) {
+            const sessionRes = await safe(
+              "load scenario session",
+              supabase
+                .from("scenario_sessions")
+                .select("id, status, scenarios(id, title, description, setting, premise, tone, instructions)")
+                .eq("id", scenarioSessionId)
+                .eq("user_id", userId)
+                .maybeSingle(),
+              { data: null } as never,
+              8000,
+            );
+            const session = (sessionRes as {
+              data: { id: string; status: string; scenarios: ActiveScenario | null } | null;
+            }).data;
+            if (!session) return new Response("Scenario not found", { status: 404 });
+            character.active_scenario = session.scenarios ?? null;
+            void safe(
+              "touch scenario session",
+              supabase
+                .from("scenario_sessions")
+                .update({ last_active_at: new Date().toISOString() })
+                .eq("id", scenarioSessionId)
+                .eq("user_id", userId),
+              null as never,
+            );
+          }
+
+
           // ---- Phase 2 context: bounded, parallel, and never fatal ----
           const [countRes, memRes, sumRes] = await Promise.all([
             safe(
