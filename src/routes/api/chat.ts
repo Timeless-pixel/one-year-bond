@@ -21,16 +21,21 @@ interface Character {
   mood: string | null;
   relationship_stage: string | null;
   journey_start_date: string;
+  daily_events_enabled?: boolean | null;
+  surprises_enabled?: boolean | null;
   active_scenario?: ActiveScenario | null;
 }
 
 interface ActiveScenario {
   id: string;
   title: string;
-  description?: string;
-  setting?: string;
-  instructions?: string;
+  description?: string | null;
+  setting?: string | null;
+  premise?: string | null;
+  tone?: string | null;
+  instructions?: string | null;
 }
+
 
 interface MemoryRow {
   category: string;
