@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Home, MessageCircle, Sparkles, LogOut, Brain, BookHeart } from "lucide-react";
+import { Home, MessageCircle, Sparkles, LogOut, Brain, BookHeart, Clapperboard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -7,10 +7,12 @@ import type { ReactNode } from "react";
 const nav = [
   { to: "/home", label: "Home", icon: Home },
   { to: "/chat", label: "Chat", icon: MessageCircle },
+  { to: "/scenarios", label: "Scenarios", icon: Clapperboard },
   { to: "/memories", label: "Memories", icon: Brain },
   { to: "/story", label: "Our Story", icon: BookHeart },
   { to: "/character", label: "Character", icon: Sparkles },
 ] as const;
+
 
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
