@@ -364,12 +364,22 @@ export const Route = createFileRoute("/api/chat")({
           const token = authHeader.slice(7);
 
           let messages: UIMessage[];
+          let scenarioSessionId: string | null = null;
           try {
-            ({ messages } = (await request.json()) as { messages: UIMessage[] });
+            const body = (await request.json()) as {
+              messages: UIMessage[];
+              scenarioSessionId?: string | null;
+            };
+            messages = body.messages;
+            scenarioSessionId =
+              typeof body.scenarioSessionId === "string" && body.scenarioSessionId.length > 0
+                ? body.scenarioSessionId
+                : null;
           } catch {
             return new Response("Bad request", { status: 400 });
           }
           if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
+
 
           const key = process.env.LOVABLE_API_KEY;
           if (!key) return new Response("The companion is unavailable right now.", { status: 500 });
