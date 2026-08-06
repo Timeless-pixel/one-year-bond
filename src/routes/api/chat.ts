@@ -430,6 +430,16 @@ export const Route = createFileRoute("/api/chat")({
           const character = (charRes as { data: Character | null }).data;
           if (!character) return new Response("No character", { status: 400 });
 
+          void safe(
+            "touch bond",
+            supabase
+              .from("characters")
+              .update({ last_active_at: new Date().toISOString() })
+              .eq("id", character.id)
+              .eq("user_id", userId),
+            null as never,
+          );
+
           const dayNumber = Math.max(
             1,
             Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
