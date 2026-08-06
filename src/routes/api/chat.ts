@@ -252,6 +252,7 @@ async function maybeSummarize(params: {
     .from("conversation_summaries")
     .select("message_count_at")
     .eq("user_id", userId)
+    .eq("character_id", characterId)
     .order("message_count_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -262,6 +263,7 @@ async function maybeSummarize(params: {
     .from("messages")
     .select("role, content, created_at")
     .eq("user_id", userId)
+    .eq("character_id", characterId)
     .order("created_at", { ascending: true })
     .range(since, since + 29);
   if (!batch || batch.length < 20) return;
@@ -296,12 +298,13 @@ SUMMARY:`,
 async function maybeUpdateMood(params: {
   supabase: SupabaseClient;
   userId: string;
+  characterId: string;
   currentMood: string | null;
   userText: string;
   assistantText: string;
   apiKey: string;
 }) {
-  const { supabase, userId, currentMood, userText, assistantText, apiKey } = params;
+  const { supabase, userId, characterId, currentMood, userText, assistantText, apiKey } = params;
   // Only occasionally, to keep it feeling alive without being noisy.
   if (Math.random() > 0.15) return;
   const gateway = createLovableAiGatewayProvider(params.apiKey);
@@ -322,7 +325,11 @@ MOOD:`,
     });
     const mood = text.trim().split(/\s+/)[0]?.replace(/[^A-Za-z]/g, "").slice(0, 30);
     if (mood && mood.length > 2 && mood.toLowerCase() !== (currentMood ?? "").toLowerCase()) {
-      await supabase.from("characters").update({ mood }).eq("user_id", userId);
+      await supabase
+        .from("characters")
+        .update({ mood })
+        .eq("id", characterId)
+        .eq("user_id", userId);
     }
   } catch {
     /* mood updates are best-effort */
@@ -365,12 +372,18 @@ export const Route = createFileRoute("/api/chat")({
 
           let messages: UIMessage[];
           let scenarioSessionId: string | null = null;
+          let characterId: string | null = null;
           try {
             const body = (await request.json()) as {
               messages: UIMessage[];
               scenarioSessionId?: string | null;
+              characterId?: string | null;
             };
             messages = body.messages;
+            characterId =
+              typeof body.characterId === "string" && body.characterId.length > 0
+                ? body.characterId
+                : null;
             scenarioSessionId =
               typeof body.scenarioSessionId === "string" && body.scenarioSessionId.length > 0
                 ? body.scenarioSessionId
@@ -398,14 +411,34 @@ export const Route = createFileRoute("/api/chat")({
           if (!user) return new Response("Unauthorized", { status: 401 });
           const userId = user.id;
 
-          const charRes = await safe(
-            "load character",
-            supabase.from("characters").select("*").eq("user_id", userId).maybeSingle(),
-            { data: null } as never,
-            8000,
-          );
+          const charQuery = characterId
+            ? supabase
+                .from("characters")
+                .select("*")
+                .eq("id", characterId)
+                .eq("user_id", userId)
+                .maybeSingle()
+            : supabase
+                .from("characters")
+                .select("*")
+                .eq("user_id", userId)
+                .eq("status", "active")
+                .order("last_active_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+          const charRes = await safe("load character", charQuery, { data: null } as never, 8000);
           const character = (charRes as { data: Character | null }).data;
           if (!character) return new Response("No character", { status: 400 });
+
+          void safe(
+            "touch bond",
+            supabase
+              .from("characters")
+              .update({ last_active_at: new Date().toISOString() })
+              .eq("id", character.id)
+              .eq("user_id", userId),
+            null as never,
+          );
 
           const dayNumber = Math.max(
             1,
@@ -421,6 +454,7 @@ export const Route = createFileRoute("/api/chat")({
                 .select("id, status, scenarios(id, title, description, setting, premise, tone, instructions)")
                 .eq("id", scenarioSessionId)
                 .eq("user_id", userId)
+                .eq("character_id", character.id)
                 .maybeSingle(),
               { data: null } as never,
               8000,
@@ -446,7 +480,11 @@ export const Route = createFileRoute("/api/chat")({
           const [countRes, memRes, sumRes] = await Promise.all([
             safe(
               "message count",
-              supabase.from("messages").select("id", { count: "exact", head: true }).eq("user_id", userId),
+              supabase
+                .from("messages")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", userId)
+                .eq("character_id", character.id),
               { count: 0 } as never,
             ),
             safe(
@@ -455,6 +493,7 @@ export const Route = createFileRoute("/api/chat")({
                 .from("memories")
                 .select("category, content, importance, pinned")
                 .eq("user_id", userId)
+                .eq("character_id", character.id)
                 .order("pinned", { ascending: false })
                 .order("importance", { ascending: false })
                 .order("created_at", { ascending: false })
@@ -467,6 +506,7 @@ export const Route = createFileRoute("/api/chat")({
                 .from("conversation_summaries")
                 .select("summary, message_count_at")
                 .eq("user_id", userId)
+                .eq("character_id", character.id)
                 .order("created_at", { ascending: false })
                 .limit(MAX_SUMMARIES),
               { data: [] } as never,
@@ -512,6 +552,7 @@ export const Route = createFileRoute("/api/chat")({
                   .from("memories")
                   .delete()
                   .eq("user_id", userId)
+                  .eq("character_id", character.id)
                   .neq("category", "character")
                   .ilike("content", `%${keyword}%`),
                 null as never,
@@ -593,6 +634,7 @@ export const Route = createFileRoute("/api/chat")({
                 maybeUpdateMood({
                   supabase,
                   userId,
+                  characterId: character.id,
                   currentMood: character.mood,
                   userText: lastUserText,
                   assistantText: text,

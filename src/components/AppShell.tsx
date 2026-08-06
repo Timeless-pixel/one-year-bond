@@ -1,7 +1,8 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Home, MessageCircle, Sparkles, LogOut, Brain, BookHeart, Clapperboard } from "lucide-react";
+import { Home, MessageCircle, Sparkles, LogOut, Brain, BookHeart, Clapperboard, Library, Gift } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { BondSwitcher } from "@/components/BondSwitcher";
 import type { ReactNode } from "react";
 
 const nav = [
@@ -10,8 +11,15 @@ const nav = [
   { to: "/scenarios", label: "Scenarios", icon: Clapperboard },
   { to: "/memories", label: "Memories", icon: Brain },
   { to: "/story", label: "Our Story", icon: BookHeart },
+  { to: "/keepsakes", label: "Keepsakes", icon: Gift },
   { to: "/character", label: "Character", icon: Sparkles },
+  { to: "/bonds", label: "Bonds", icon: Library },
 ] as const;
+
+const mobileNav = nav.filter((n) =>
+  ["/home", "/chat", "/scenarios", "/story", "/bonds"].includes(n.to),
+);
+
 
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -30,10 +38,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       {/* Desktop sidebar */}
       <aside className="glass fixed inset-y-4 left-4 hidden w-56 flex-col rounded-3xl p-5 md:flex">
-        <Link to="/home" className="mb-8 flex items-center gap-2">
+        <Link to="/home" className="mb-5 flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg" style={{ background: "var(--gradient-primary)" }} />
           <span className="text-lg font-semibold">Lumen</span>
         </Link>
+        <div className="mb-4">
+          <BondSwitcher />
+        </div>
         <nav className="flex flex-1 flex-col gap-1">
           {nav.map((n) => {
             const active = loc.pathname === n.to;
@@ -66,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Mobile bottom nav */}
       <nav className="glass fixed inset-x-4 bottom-4 flex items-center justify-around rounded-2xl px-2 py-2 md:hidden">
-        {nav.map((n) => {
+        {mobileNav.map((n) => {
           const active = loc.pathname === n.to;
           return (
             <Link

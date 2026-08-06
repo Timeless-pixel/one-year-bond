@@ -17,10 +17,12 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedStoryRouteImport } from './routes/_authenticated/story'
 import { Route as AuthenticatedScenariosRouteImport } from './routes/_authenticated/scenarios'
 import { Route as AuthenticatedMemoriesRouteImport } from './routes/_authenticated/memories'
+import { Route as AuthenticatedKeepsakesRouteImport } from './routes/_authenticated/keepsakes'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedCharacterRouteImport } from './routes/_authenticated/character'
+import { Route as AuthenticatedBondsRouteImport } from './routes/_authenticated/bonds'
 import { Route as AuthenticatedScenarioSessionIdRouteImport } from './routes/_authenticated/scenario.$sessionId'
 
 const AuthRoute = AuthRouteImport.update({
@@ -62,6 +64,11 @@ const AuthenticatedMemoriesRoute = AuthenticatedMemoriesRouteImport.update({
   path: '/memories',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedKeepsakesRoute = AuthenticatedKeepsakesRouteImport.update({
+  id: '/keepsakes',
+  path: '/keepsakes',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedHomeRoute = AuthenticatedHomeRouteImport.update({
   id: '/home',
   path: '/home',
@@ -82,6 +89,11 @@ const AuthenticatedCharacterRoute = AuthenticatedCharacterRouteImport.update({
   path: '/character',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedBondsRoute = AuthenticatedBondsRouteImport.update({
+  id: '/bonds',
+  path: '/bonds',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedScenarioSessionIdRoute =
   AuthenticatedScenarioSessionIdRouteImport.update({
     id: '/scenario/$sessionId',
@@ -92,10 +104,12 @@ const AuthenticatedScenarioSessionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/bonds': typeof AuthenticatedBondsRoute
   '/character': typeof AuthenticatedCharacterRoute
   '/chat': typeof AuthenticatedChatRoute
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
+  '/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/memories': typeof AuthenticatedMemoriesRoute
   '/scenarios': typeof AuthenticatedScenariosRoute
   '/story': typeof AuthenticatedStoryRoute
@@ -106,10 +120,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/bonds': typeof AuthenticatedBondsRoute
   '/character': typeof AuthenticatedCharacterRoute
   '/chat': typeof AuthenticatedChatRoute
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
+  '/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/memories': typeof AuthenticatedMemoriesRoute
   '/scenarios': typeof AuthenticatedScenariosRoute
   '/story': typeof AuthenticatedStoryRoute
@@ -122,10 +138,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_authenticated/bonds': typeof AuthenticatedBondsRoute
   '/_authenticated/character': typeof AuthenticatedCharacterRoute
   '/_authenticated/chat': typeof AuthenticatedChatRoute
   '/_authenticated/create': typeof AuthenticatedCreateRoute
   '/_authenticated/home': typeof AuthenticatedHomeRoute
+  '/_authenticated/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/_authenticated/memories': typeof AuthenticatedMemoriesRoute
   '/_authenticated/scenarios': typeof AuthenticatedScenariosRoute
   '/_authenticated/story': typeof AuthenticatedStoryRoute
@@ -138,10 +156,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/bonds'
     | '/character'
     | '/chat'
     | '/create'
     | '/home'
+    | '/keepsakes'
     | '/memories'
     | '/scenarios'
     | '/story'
@@ -152,10 +172,12 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/bonds'
     | '/character'
     | '/chat'
     | '/create'
     | '/home'
+    | '/keepsakes'
     | '/memories'
     | '/scenarios'
     | '/story'
@@ -167,10 +189,12 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/_authenticated/bonds'
     | '/_authenticated/character'
     | '/_authenticated/chat'
     | '/_authenticated/create'
     | '/_authenticated/home'
+    | '/_authenticated/keepsakes'
     | '/_authenticated/memories'
     | '/_authenticated/scenarios'
     | '/_authenticated/story'
@@ -245,6 +269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMemoriesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/keepsakes': {
+      id: '/_authenticated/keepsakes'
+      path: '/keepsakes'
+      fullPath: '/keepsakes'
+      preLoaderRoute: typeof AuthenticatedKeepsakesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/home': {
       id: '/_authenticated/home'
       path: '/home'
@@ -273,6 +304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCharacterRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/bonds': {
+      id: '/_authenticated/bonds'
+      path: '/bonds'
+      fullPath: '/bonds'
+      preLoaderRoute: typeof AuthenticatedBondsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/scenario/$sessionId': {
       id: '/_authenticated/scenario/$sessionId'
       path: '/scenario/$sessionId'
@@ -284,10 +322,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedBondsRoute: typeof AuthenticatedBondsRoute
   AuthenticatedCharacterRoute: typeof AuthenticatedCharacterRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRoute
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
   AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
+  AuthenticatedKeepsakesRoute: typeof AuthenticatedKeepsakesRoute
   AuthenticatedMemoriesRoute: typeof AuthenticatedMemoriesRoute
   AuthenticatedScenariosRoute: typeof AuthenticatedScenariosRoute
   AuthenticatedStoryRoute: typeof AuthenticatedStoryRoute
@@ -295,10 +335,12 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedBondsRoute: AuthenticatedBondsRoute,
   AuthenticatedCharacterRoute: AuthenticatedCharacterRoute,
   AuthenticatedChatRoute: AuthenticatedChatRoute,
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
   AuthenticatedHomeRoute: AuthenticatedHomeRoute,
+  AuthenticatedKeepsakesRoute: AuthenticatedKeepsakesRoute,
   AuthenticatedMemoriesRoute: AuthenticatedMemoriesRoute,
   AuthenticatedScenariosRoute: AuthenticatedScenariosRoute,
   AuthenticatedStoryRoute: AuthenticatedStoryRoute,
@@ -318,13 +360,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
