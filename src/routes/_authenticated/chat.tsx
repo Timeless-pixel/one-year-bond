@@ -98,6 +98,7 @@ function ChatWindow({
     [initialMessages],
   );
 
+  const [activeBondId] = useActiveBondId();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const transport = useMemo(
