@@ -21,6 +21,7 @@ import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/h
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedCharacterRouteImport } from './routes/_authenticated/character'
+import { Route as AuthenticatedBondsRouteImport } from './routes/_authenticated/bonds'
 import { Route as AuthenticatedScenarioSessionIdRouteImport } from './routes/_authenticated/scenario.$sessionId'
 
 const AuthRoute = AuthRouteImport.update({
@@ -82,6 +83,11 @@ const AuthenticatedCharacterRoute = AuthenticatedCharacterRouteImport.update({
   path: '/character',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedBondsRoute = AuthenticatedBondsRouteImport.update({
+  id: '/bonds',
+  path: '/bonds',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedScenarioSessionIdRoute =
   AuthenticatedScenarioSessionIdRouteImport.update({
     id: '/scenario/$sessionId',
@@ -92,6 +98,7 @@ const AuthenticatedScenarioSessionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/bonds': typeof AuthenticatedBondsRoute
   '/character': typeof AuthenticatedCharacterRoute
   '/chat': typeof AuthenticatedChatRoute
   '/create': typeof AuthenticatedCreateRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/bonds': typeof AuthenticatedBondsRoute
   '/character': typeof AuthenticatedCharacterRoute
   '/chat': typeof AuthenticatedChatRoute
   '/create': typeof AuthenticatedCreateRoute
@@ -122,6 +130,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_authenticated/bonds': typeof AuthenticatedBondsRoute
   '/_authenticated/character': typeof AuthenticatedCharacterRoute
   '/_authenticated/chat': typeof AuthenticatedChatRoute
   '/_authenticated/create': typeof AuthenticatedCreateRoute
@@ -138,6 +147,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/bonds'
     | '/character'
     | '/chat'
     | '/create'
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/bonds'
     | '/character'
     | '/chat'
     | '/create'
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/_authenticated/bonds'
     | '/_authenticated/character'
     | '/_authenticated/chat'
     | '/_authenticated/create'
@@ -273,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCharacterRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/bonds': {
+      id: '/_authenticated/bonds'
+      path: '/bonds'
+      fullPath: '/bonds'
+      preLoaderRoute: typeof AuthenticatedBondsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/scenario/$sessionId': {
       id: '/_authenticated/scenario/$sessionId'
       path: '/scenario/$sessionId'
@@ -284,6 +303,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedBondsRoute: typeof AuthenticatedBondsRoute
   AuthenticatedCharacterRoute: typeof AuthenticatedCharacterRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRoute
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
@@ -295,6 +315,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedBondsRoute: AuthenticatedBondsRoute,
   AuthenticatedCharacterRoute: AuthenticatedCharacterRoute,
   AuthenticatedChatRoute: AuthenticatedChatRoute,
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
