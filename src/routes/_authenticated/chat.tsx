@@ -132,7 +132,7 @@ function ChatWindow({
           }
         },
       }),
-    [],
+    [activeBondId],
   );
 
   const { messages, sendMessage, status, setMessages } = useChat({
