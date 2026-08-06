@@ -372,6 +372,7 @@ export const Route = createFileRoute("/api/chat")({
 
           let messages: UIMessage[];
           let scenarioSessionId: string | null = null;
+          let characterId: string | null = null;
           try {
             const body = (await request.json()) as {
               messages: UIMessage[];
