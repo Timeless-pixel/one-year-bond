@@ -4,6 +4,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { getMyCharacter, listMemories } from "@/lib/character.functions";
 import { AppShell } from "@/components/AppShell";
 import { useEffect } from "react";
+import { getLivingMoments, refreshLivingMoments, setLivingMomentStatus } from "@/lib/bond.functions";
+import { useActiveBondId } from "@/hooks/useActiveBond";
+import { MOMENT_KIND_LABEL, type LivingMoment } from "@/lib/bond-shared";
+import { useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/_authenticated/home")({
   component: HomePage,
@@ -23,18 +27,37 @@ function computeDay(startDate: string) {
 }
 
 function HomePage() {
+  const [characterId] = useActiveBondId();
+  const qc = useQueryClient();
   const fetchCharacter = useServerFn(getMyCharacter);
+  const fetchMoments = useServerFn(getLivingMoments);
+  const refreshMoments = useServerFn(refreshLivingMoments);
+  const setMomentStatus = useServerFn(setLivingMomentStatus);
   const fetchMemories = useServerFn(listMemories);
   const navigate = useNavigate();
   const { data: character, isLoading } = useQuery({
-    queryKey: ["character"],
-    queryFn: () => fetchCharacter(),
+    queryKey: ["character", characterId],
+    queryFn: () => fetchCharacter({ data: { characterId } }),
   });
   const { data: memories = [] } = useQuery({
-    queryKey: ["memories"],
-    queryFn: () => fetchMemories(),
+    queryKey: ["memories", characterId],
+    queryFn: () => fetchMemories({ data: { characterId } }),
     enabled: !!character,
   });
+  const { data: moments = [] } = useQuery({
+    queryKey: ["living-moments", characterId],
+    queryFn: async () => {
+      await refreshMoments({ data: { characterId } }).catch(() => null);
+      return fetchMoments({ data: { characterId } });
+    },
+    enabled: !!character,
+  });
+
+  function dismissMoment(id: string) {
+    void setMomentStatus({ data: { id, status: "dismissed" } }).then(() =>
+      qc.invalidateQueries({ queryKey: ["living-moments"] }),
+    );
+  }
 
   useEffect(() => {
     if (!isLoading && !character) navigate({ to: "/create" });
@@ -63,6 +86,32 @@ function HomePage() {
             {character.name} is <span className="text-gradient italic">waiting</span> for you.
           </h1>
         </div>
+
+        {(moments as LivingMoment[]).length > 0 && (
+          <div className="mb-8 flex flex-col gap-3">
+            {(moments as LivingMoment[]).map((m) => (
+              <div key={m.id} className="glass flex items-start justify-between gap-4 rounded-2xl p-5">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {MOMENT_KIND_LABEL[m.kind] ?? "A small moment"} · while you were away
+                  </div>
+                  <p className="mt-1.5 text-sm">{m.content}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Link to="/chat" className="btn-primary rounded-xl px-3 py-1.5 text-xs">
+                    Reply
+                  </Link>
+                  <button
+                    onClick={() => dismissMoment(m.id)}
+                    className="rounded-xl border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:text-foreground"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
           <div className="glass overflow-hidden rounded-3xl">

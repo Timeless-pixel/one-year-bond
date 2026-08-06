@@ -17,6 +17,7 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedStoryRouteImport } from './routes/_authenticated/story'
 import { Route as AuthenticatedScenariosRouteImport } from './routes/_authenticated/scenarios'
 import { Route as AuthenticatedMemoriesRouteImport } from './routes/_authenticated/memories'
+import { Route as AuthenticatedKeepsakesRouteImport } from './routes/_authenticated/keepsakes'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
 import { Route as AuthenticatedCreateRouteImport } from './routes/_authenticated/create'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
@@ -63,6 +64,11 @@ const AuthenticatedMemoriesRoute = AuthenticatedMemoriesRouteImport.update({
   path: '/memories',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedKeepsakesRoute = AuthenticatedKeepsakesRouteImport.update({
+  id: '/keepsakes',
+  path: '/keepsakes',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedHomeRoute = AuthenticatedHomeRouteImport.update({
   id: '/home',
   path: '/home',
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/chat': typeof AuthenticatedChatRoute
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
+  '/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/memories': typeof AuthenticatedMemoriesRoute
   '/scenarios': typeof AuthenticatedScenariosRoute
   '/story': typeof AuthenticatedStoryRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/chat': typeof AuthenticatedChatRoute
   '/create': typeof AuthenticatedCreateRoute
   '/home': typeof AuthenticatedHomeRoute
+  '/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/memories': typeof AuthenticatedMemoriesRoute
   '/scenarios': typeof AuthenticatedScenariosRoute
   '/story': typeof AuthenticatedStoryRoute
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   '/_authenticated/chat': typeof AuthenticatedChatRoute
   '/_authenticated/create': typeof AuthenticatedCreateRoute
   '/_authenticated/home': typeof AuthenticatedHomeRoute
+  '/_authenticated/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/_authenticated/memories': typeof AuthenticatedMemoriesRoute
   '/_authenticated/scenarios': typeof AuthenticatedScenariosRoute
   '/_authenticated/story': typeof AuthenticatedStoryRoute
@@ -152,6 +161,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/create'
     | '/home'
+    | '/keepsakes'
     | '/memories'
     | '/scenarios'
     | '/story'
@@ -167,6 +177,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/create'
     | '/home'
+    | '/keepsakes'
     | '/memories'
     | '/scenarios'
     | '/story'
@@ -183,6 +194,7 @@ export interface FileRouteTypes {
     | '/_authenticated/chat'
     | '/_authenticated/create'
     | '/_authenticated/home'
+    | '/_authenticated/keepsakes'
     | '/_authenticated/memories'
     | '/_authenticated/scenarios'
     | '/_authenticated/story'
@@ -257,6 +269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMemoriesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/keepsakes': {
+      id: '/_authenticated/keepsakes'
+      path: '/keepsakes'
+      fullPath: '/keepsakes'
+      preLoaderRoute: typeof AuthenticatedKeepsakesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/home': {
       id: '/_authenticated/home'
       path: '/home'
@@ -308,6 +327,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChatRoute: typeof AuthenticatedChatRoute
   AuthenticatedCreateRoute: typeof AuthenticatedCreateRoute
   AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
+  AuthenticatedKeepsakesRoute: typeof AuthenticatedKeepsakesRoute
   AuthenticatedMemoriesRoute: typeof AuthenticatedMemoriesRoute
   AuthenticatedScenariosRoute: typeof AuthenticatedScenariosRoute
   AuthenticatedStoryRoute: typeof AuthenticatedStoryRoute
@@ -320,6 +340,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChatRoute: AuthenticatedChatRoute,
   AuthenticatedCreateRoute: AuthenticatedCreateRoute,
   AuthenticatedHomeRoute: AuthenticatedHomeRoute,
+  AuthenticatedKeepsakesRoute: AuthenticatedKeepsakesRoute,
   AuthenticatedMemoriesRoute: AuthenticatedMemoriesRoute,
   AuthenticatedScenariosRoute: AuthenticatedScenariosRoute,
   AuthenticatedStoryRoute: AuthenticatedStoryRoute,
