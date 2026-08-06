@@ -1,16 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { resolveCharacter } from "@/lib/bond.server";
+
+const BondInput = z.object({ characterId: z.string().uuid().optional() });
 
 export const listScenarios = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((i: unknown) => BondInput.parse(i ?? {}))
+  .handler(async ({ data: input, context }) => {
+    const bond = await resolveCharacter(context.supabase, context.userId, input.characterId);
     const [catalog, sessions] = await Promise.all([
       context.supabase.from("scenarios").select("*").order("sort_order", { ascending: true }),
       context.supabase
         .from("scenario_sessions")
         .select("id, scenario_id, status, recap, day_started, last_active_at, completed_at")
         .eq("user_id", context.userId)
+        .eq("character_id", bond?.id ?? "00000000-0000-0000-0000-000000000000")
         .order("last_active_at", { ascending: false }),
     ]);
     if (catalog.error) throw new Error(catalog.error.message);
@@ -19,13 +25,13 @@ export const listScenarios = createServerFn({ method: "GET" })
 
 export const startScenario = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ scenarioId: z.string().uuid() }).parse(input))
+  .inputValidator((input: unknown) =>
+    z
+      .object({ scenarioId: z.string().uuid(), characterId: z.string().uuid().optional() })
+      .parse(input),
+  )
   .handler(async ({ data, context }) => {
-    const { data: character } = await context.supabase
-      .from("characters")
-      .select("id, journey_start_date")
-      .eq("user_id", context.userId)
-      .maybeSingle();
+    const character = await resolveCharacter(context.supabase, context.userId, data.characterId);
     if (!character) throw new Error("No character yet.");
 
     // Resume instead of duplicating an in-progress session.
@@ -33,6 +39,7 @@ export const startScenario = createServerFn({ method: "POST" })
       .from("scenario_sessions")
       .select("id")
       .eq("user_id", context.userId)
+      .eq("character_id", character.id)
       .eq("scenario_id", data.scenarioId)
       .eq("status", "active")
       .maybeSingle();
@@ -180,11 +187,17 @@ RECAP:`,
 
 export const listStoryEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((i: unknown) => BondInput.parse(i ?? {}))
+  .handler(async ({ data: input, context }) => {
+    const bond = await resolveCharacter(context.supabase, context.userId, input.characterId, {
+      includeArchived: true,
+    });
+    if (!bond) return [];
     const { data, error } = await context.supabase
       .from("story_events")
       .select("*")
       .eq("user_id", context.userId)
+      .eq("character_id", bond.id)
       .order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -208,15 +221,21 @@ export const updateCompanionSettings = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
       .object({
+        characterId: z.string().uuid().optional(),
         daily_events_enabled: z.boolean().optional(),
         surprises_enabled: z.boolean().optional(),
+        living_moments_enabled: z.boolean().optional(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    const { characterId, ...patch } = data;
+    const bond = await resolveCharacter(context.supabase, context.userId, characterId);
+    if (!bond) throw new Error("No bond selected.");
     const { error } = await context.supabase
       .from("characters")
-      .update(data)
+      .update(patch)
+      .eq("id", bond.id)
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
