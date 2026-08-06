@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
+import { useActiveBondId } from "@/hooks/useActiveBond";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyCharacter, getMessages } from "@/lib/character.functions";
@@ -103,6 +104,7 @@ function ChatWindow({
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
+        body: { characterId: activeBondId ?? null },
         fetch: async (input, init) => {
           const token = await getAccessToken();
           const headers = new Headers(init?.headers);
