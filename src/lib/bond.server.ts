@@ -66,14 +66,16 @@ interface CharacterLike {
   mood?: string | null;
   relationship_type: string;
   relationship_stage?: string | null;
-  personality?: { traits?: string[] } | null;
-  interests?: { list?: string[] } | null;
+  personality?: unknown;
+  interests?: unknown;
   goals?: string | null;
 }
 
 function persona(c: CharacterLike) {
-  const traits = c.personality?.traits?.join(", ") || "warm";
-  const interests = c.interests?.list?.join(", ") || "small everyday things";
+  const traits =
+    (c.personality as { traits?: string[] } | null)?.traits?.join(", ") || "warm";
+  const interests =
+    (c.interests as { list?: string[] } | null)?.list?.join(", ") || "small everyday things";
   return `You are ${c.name}, a fictional character (${c.style}).
 Occupation: ${c.occupation ?? "—"}. Lives in: ${c.location ?? "—"}.
 Personality: ${traits}. Interests: ${interests}. Personal goal: ${c.goals ?? "—"}.
