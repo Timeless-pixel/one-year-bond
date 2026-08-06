@@ -18,17 +18,21 @@ export type Database = {
         Row: {
           age: string | null
           appearance: Json | null
+          archived_at: string | null
           avatar_url: string | null
           backstory: string | null
           communication_style: string | null
           created_at: string
           daily_events_enabled: boolean
+          farewell_message: string | null
           gender: string | null
           goals: string | null
           id: string
           interests: Json | null
           journey_end_date: string
           journey_start_date: string
+          last_active_at: string
+          living_moments_enabled: boolean
           location: string | null
           mood: string | null
           name: string
@@ -37,6 +41,7 @@ export type Database = {
           pronouns: string | null
           relationship_stage: string | null
           relationship_type: string
+          status: string
           style: string
           surprises_enabled: boolean
           updated_at: string
@@ -45,17 +50,21 @@ export type Database = {
         Insert: {
           age?: string | null
           appearance?: Json | null
+          archived_at?: string | null
           avatar_url?: string | null
           backstory?: string | null
           communication_style?: string | null
           created_at?: string
           daily_events_enabled?: boolean
+          farewell_message?: string | null
           gender?: string | null
           goals?: string | null
           id?: string
           interests?: Json | null
           journey_end_date?: string
           journey_start_date?: string
+          last_active_at?: string
+          living_moments_enabled?: boolean
           location?: string | null
           mood?: string | null
           name: string
@@ -64,6 +73,7 @@ export type Database = {
           pronouns?: string | null
           relationship_stage?: string | null
           relationship_type?: string
+          status?: string
           style: string
           surprises_enabled?: boolean
           updated_at?: string
@@ -72,17 +82,21 @@ export type Database = {
         Update: {
           age?: string | null
           appearance?: Json | null
+          archived_at?: string | null
           avatar_url?: string | null
           backstory?: string | null
           communication_style?: string | null
           created_at?: string
           daily_events_enabled?: boolean
+          farewell_message?: string | null
           gender?: string | null
           goals?: string | null
           id?: string
           interests?: Json | null
           journey_end_date?: string
           journey_start_date?: string
+          last_active_at?: string
+          living_moments_enabled?: boolean
           location?: string | null
           mood?: string | null
           name?: string
@@ -91,6 +105,7 @@ export type Database = {
           pronouns?: string | null
           relationship_stage?: string | null
           relationship_type?: string
+          status?: string
           style?: string
           surprises_enabled?: boolean
           updated_at?: string
@@ -159,6 +174,151 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "image_generations_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      keepsakes: {
+        Row: {
+          character_id: string
+          created_at: string
+          day: number
+          icon: string
+          id: string
+          note: string | null
+          story_event_id: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          day?: number
+          icon?: string
+          id?: string
+          note?: string | null
+          story_event_id?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          day?: number
+          icon?: string
+          id?: string
+          note?: string | null
+          story_event_id?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "keepsakes_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "keepsakes_story_event_id_fkey"
+            columns: ["story_event_id"]
+            isOneToOne: false
+            referencedRelation: "story_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      letters: {
+        Row: {
+          body: string
+          character_id: string
+          created_at: string
+          day: number
+          id: string
+          occasion: string
+          read_at: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          character_id: string
+          created_at?: string
+          day?: number
+          id?: string
+          occasion?: string
+          read_at?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          character_id?: string
+          created_at?: string
+          day?: number
+          id?: string
+          occasion?: string
+          read_at?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "letters_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      living_moments: {
+        Row: {
+          character_id: string
+          content: string
+          created_at: string
+          day: number
+          id: string
+          kind: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          character_id: string
+          content: string
+          created_at?: string
+          day?: number
+          id?: string
+          kind?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          character_id?: string
+          content?: string
+          created_at?: string
+          day?: number
+          id?: string
+          kind?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "living_moments_character_id_fkey"
             columns: ["character_id"]
             isOneToOne: false
             referencedRelation: "characters"
