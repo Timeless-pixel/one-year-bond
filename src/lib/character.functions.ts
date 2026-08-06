@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { MAX_ACTIVE_BONDS } from "@/lib/bond-shared";
+import { resolveCharacter, milestoneTitle, milestoneCopy } from "@/lib/bond.server";
 
 const CreateCharacterInput = z.object({
   name: z.string().min(1).max(60),
@@ -20,17 +22,21 @@ const CreateCharacterInput = z.object({
   avatar_url: z.string().optional(),
 });
 
+const BondInput = z.object({ characterId: z.string().uuid().optional() });
+
 export const createCharacter = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => CreateCharacterInput.parse(input))
   .handler(async ({ data, context }) => {
-    const existing = await context.supabase
+    const { count } = await context.supabase
       .from("characters")
-      .select("id")
+      .select("id", { count: "exact", head: true })
       .eq("user_id", context.userId)
-      .maybeSingle();
-    if (existing.data) {
-      throw new Error("You already have a companion for this year's journey.");
+      .eq("status", "active");
+    if ((count ?? 0) >= MAX_ACTIVE_BONDS) {
+      throw new Error(
+        `You can hold ${MAX_ACTIVE_BONDS} active bonds at a time. Archive one before starting another.`,
+      );
     }
 
     const { data: character, error } = await context.supabase
@@ -54,6 +60,8 @@ export const createCharacter = createServerFn({ method: "POST" })
         avatar_url: data.avatar_url || null,
         mood: "Curious",
         relationship_stage: "Stranger",
+        status: "active",
+        last_active_at: new Date().toISOString(),
       })
       .select("*")
       .single();
@@ -80,7 +88,6 @@ export const createCharacter = createServerFn({ method: "POST" })
       );
     }
 
-    // Day 1 milestone
     await context.supabase.from("milestones").insert({
       user_id: context.userId,
       character_id: character.id,
@@ -95,23 +102,34 @@ export const createCharacter = createServerFn({ method: "POST" })
 
 export const getMyCharacter = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const resolved = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!resolved) return null;
+    const { data: row, error } = await context.supabase
       .from("characters")
       .select("*")
+      .eq("id", resolved.id)
       .eq("user_id", context.userId)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data;
+    return row;
   });
 
 export const updateAvatarUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ avatarUrl: z.string() }).parse(input))
+  .inputValidator((input: unknown) =>
+    z.object({ avatarUrl: z.string(), characterId: z.string().uuid().optional() }).parse(input),
+  )
   .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId);
+    if (!c) throw new Error("No bond selected.");
     const { error } = await context.supabase
       .from("characters")
       .update({ avatar_url: data.avatarUrl })
+      .eq("id", c.id)
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -119,11 +137,18 @@ export const updateAvatarUrl = createServerFn({ method: "POST" })
 
 export const updateMood = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ mood: z.string().min(1).max(40) }).parse(input))
+  .inputValidator((input: unknown) =>
+    z
+      .object({ mood: z.string().min(1).max(40), characterId: z.string().uuid().optional() })
+      .parse(input),
+  )
   .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId);
+    if (!c) throw new Error("No bond selected.");
     const { error } = await context.supabase
       .from("characters")
       .update({ mood: data.mood })
+      .eq("id", c.id)
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -131,16 +156,21 @@ export const updateMood = createServerFn({ method: "POST" })
 
 export const getMessages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    // Only load recent messages for the client — older ones live in summaries.
-    const { data, error } = await context.supabase
+  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!c) return [];
+    const { data: rows, error } = await context.supabase
       .from("messages")
       .select("id, role, content, created_at")
       .eq("user_id", context.userId)
+      .eq("character_id", c.id)
       .order("created_at", { ascending: false })
       .limit(60);
     if (error) throw new Error(error.message);
-    return (data ?? []).reverse();
+    return (rows ?? []).reverse();
   });
 
 export const PORTRAIT_DAILY_LIMIT = 4;
@@ -162,7 +192,6 @@ export const getPortraitAllowance = createServerFn({ method: "GET" })
 
 // -------------------- Memories --------------------
 
-// Accept both legacy + new category keys so existing rows keep working.
 const MEMORY_CATEGORIES = [
   "user", "preference", "event", "shared", "character", "goal",
   "likes", "moment", "relationship",
@@ -170,19 +199,26 @@ const MEMORY_CATEGORIES = [
 
 export const listMemories = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!c) return [];
+    const { data: rows, error } = await context.supabase
       .from("memories")
       .select("*")
       .eq("user_id", context.userId)
+      .eq("character_id", c.id)
       .order("pinned", { ascending: false })
       .order("importance", { ascending: false })
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return data ?? [];
+    return rows ?? [];
   });
 
 const CreateMemoryInput = z.object({
+  characterId: z.string().uuid().optional(),
   content: z.string().min(1).max(400),
   category: z.enum(MEMORY_CATEGORIES).default("user"),
   importance: z.number().int().min(1).max(5).default(3),
@@ -193,17 +229,13 @@ export const createMemory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => CreateMemoryInput.parse(input))
   .handler(async ({ data, context }) => {
-    const { data: character } = await context.supabase
-      .from("characters")
-      .select("id")
-      .eq("user_id", context.userId)
-      .maybeSingle();
-    if (!character) throw new Error("No character");
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId);
+    if (!c) throw new Error("No bond selected.");
     const { data: mem, error } = await context.supabase
       .from("memories")
       .insert({
         user_id: context.userId,
-        character_id: character.id,
+        character_id: c.id,
         content: data.content,
         category: data.category,
         importance: data.importance,
@@ -253,12 +285,17 @@ export const deleteMemory = createServerFn({ method: "POST" })
 
 export const deleteAllMemories = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    // Never wipe the character's own self-memories (backstory/goals/etc.)
+  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!c) return { ok: true };
     const { error } = await context.supabase
       .from("memories")
       .delete()
       .eq("user_id", context.userId)
+      .eq("character_id", c.id)
       .neq("category", "character");
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -266,29 +303,58 @@ export const deleteAllMemories = createServerFn({ method: "POST" })
 
 export const clearConversation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!c) return { ok: true };
     const { error } = await context.supabase
       .from("messages")
       .delete()
-      .eq("user_id", context.userId);
+      .eq("user_id", context.userId)
+      .eq("character_id", c.id);
     if (error) throw new Error(error.message);
     await context.supabase
       .from("conversation_summaries")
       .delete()
-      .eq("user_id", context.userId);
+      .eq("user_id", context.userId)
+      .eq("character_id", c.id);
     return { ok: true };
   });
 
 export const exportUserData = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const [character, memories, messages, milestones, summaries] = await Promise.all([
-      context.supabase.from("characters").select("*").eq("user_id", context.userId).maybeSingle(),
-      context.supabase.from("memories").select("*").eq("user_id", context.userId),
-      context.supabase.from("messages").select("*").eq("user_id", context.userId).order("created_at"),
-      context.supabase.from("milestones").select("*").eq("user_id", context.userId).order("day"),
-      context.supabase.from("conversation_summaries").select("*").eq("user_id", context.userId),
-    ]);
+  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    const id = c?.id ?? "";
+    const [character, memories, messages, milestones, summaries, keepsakes, letters] =
+      await Promise.all([
+        context.supabase.from("characters").select("*").eq("id", id).maybeSingle(),
+        context.supabase.from("memories").select("*").eq("user_id", context.userId).eq("character_id", id),
+        context.supabase
+          .from("messages")
+          .select("*")
+          .eq("user_id", context.userId)
+          .eq("character_id", id)
+          .order("created_at"),
+        context.supabase
+          .from("milestones")
+          .select("*")
+          .eq("user_id", context.userId)
+          .eq("character_id", id)
+          .order("day"),
+        context.supabase
+          .from("conversation_summaries")
+          .select("*")
+          .eq("user_id", context.userId)
+          .eq("character_id", id),
+        context.supabase.from("keepsakes").select("*").eq("user_id", context.userId).eq("character_id", id),
+        context.supabase.from("letters").select("*").eq("user_id", context.userId).eq("character_id", id),
+      ]);
     return {
       exported_at: new Date().toISOString(),
       character: character.data,
@@ -296,6 +362,8 @@ export const exportUserData = createServerFn({ method: "GET" })
       messages: messages.data ?? [],
       milestones: milestones.data ?? [],
       conversation_summaries: summaries.data ?? [],
+      keepsakes: keepsakes.data ?? [],
+      letters: letters.data ?? [],
     };
   });
 
@@ -303,37 +371,39 @@ export const exportUserData = createServerFn({ method: "GET" })
 
 export const listMilestones = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!c) return [];
+    const { data: rows, error } = await context.supabase
       .from("milestones")
       .select("*")
       .eq("user_id", context.userId)
+      .eq("character_id", c.id)
       .order("day", { ascending: true });
     if (error) throw new Error(error.message);
-    return data ?? [];
+    return rows ?? [];
   });
-
-const MILESTONE_DAYS = [1, 7, 30, 60, 100, 180, 250, 365];
 
 export const checkMilestones = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data: character } = await context.supabase
-      .from("characters")
-      .select("id, name, journey_start_date")
-      .eq("user_id", context.userId)
-      .maybeSingle();
+  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .handler(async ({ data, context }) => {
+    const character = await resolveCharacter(context.supabase, context.userId, data.characterId);
     if (!character) return { created: 0 };
     const day = Math.max(
       1,
       Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
     );
-    const eligible = MILESTONE_DAYS.filter((d) => d <= day);
+    const eligible = [1, 7, 30, 60, 100, 180, 250, 365].filter((d) => d <= day);
     if (!eligible.length) return { created: 0 };
     const { data: existing } = await context.supabase
       .from("milestones")
       .select("day")
       .eq("user_id", context.userId)
+      .eq("character_id", character.id)
       .eq("kind", "day")
       .in("day", eligible);
     const existingDays = new Set((existing ?? []).map((m) => m.day));
@@ -351,27 +421,3 @@ export const checkMilestones = createServerFn({ method: "POST" })
     await context.supabase.from("milestones").insert(toCreate);
     return { created: toCreate.length };
   });
-
-function milestoneTitle(day: number) {
-  switch (day) {
-    case 1: return "The journey begins";
-    case 7: return "One week together";
-    case 30: return "One month in";
-    case 60: return "Two months";
-    case 100: return "One hundred days";
-    case 180: return "Halfway there";
-    case 250: return "Deep in the year";
-    case 365: return "A full year";
-    default: return `Day ${day}`;
-  }
-}
-function milestoneCopy(day: number, name: string) {
-  switch (day) {
-    case 7: return `A week of getting to know ${name}.`;
-    case 30: return `A month with ${name}. The rhythm is real now.`;
-    case 100: return `100 days shared. Something has grown between you.`;
-    case 180: return `Half the year. ${name} feels like part of your world.`;
-    case 365: return `A full year with ${name}. This is your story.`;
-    default: return `Day ${day} with ${name}.`;
-  }
-}
