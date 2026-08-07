@@ -8,7 +8,6 @@ import { getLivingMoments, refreshLivingMoments, setLivingMomentStatus } from "@
 import { useActiveBondId } from "@/hooks/useActiveBond";
 import { MOMENT_KIND_LABEL, type LivingMoment } from "@/lib/bond-shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { getBondExperience } from "@/lib/bond.functions";
 import { EXPRESSION_EMOJI, expressionFromMood, isExpression } from "@/lib/emotion-shared";
 
 export const Route = createFileRoute("/_authenticated/home")({
