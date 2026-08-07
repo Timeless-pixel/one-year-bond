@@ -536,6 +536,49 @@ export const Route = createFileRoute("/api/chat")({
           const memories = ((memRes as { data: MemoryRow[] | null }).data ?? []).slice(0, MAX_MEMORIES);
           const summaries = ((sumRes as { data: SummaryRow[] | null }).data ?? []).slice(0, MAX_SUMMARIES).reverse();
 
+          // Multi-factor relationship signals (never message count alone).
+          const [memCountRes, sceneCountRes, stoneCountRes] = await Promise.all([
+            safe(
+              "memory count",
+              supabase
+                .from("memories")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", userId)
+                .eq("character_id", character.id)
+                .neq("category", "character"),
+              { count: 0 } as never,
+            ),
+            safe(
+              "story count",
+              supabase
+                .from("story_events")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", userId)
+                .eq("character_id", character.id),
+              { count: 0 } as never,
+            ),
+            safe(
+              "milestone count",
+              supabase
+                .from("milestones")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", userId)
+                .eq("character_id", character.id),
+              { count: 0 } as never,
+            ),
+          ]);
+          const signals: BondSignals = {
+            memories: (memCountRes as { count: number | null }).count ?? 0,
+            scenarios: (sceneCountRes as { count: number | null }).count ?? 0,
+            milestones: (stoneCountRes as { count: number | null }).count ?? 0,
+            trust: character.trust ?? 0,
+          };
+          const recentPhrases = Array.isArray(character.recent_phrases)
+            ? (character.recent_phrases as string[])
+            : [];
+
+
+
           const gateway = createLovableAiGatewayProvider(key);
           const model = gateway("google/gemini-3-flash-preview");
 
