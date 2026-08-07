@@ -59,7 +59,7 @@ const initial: FormState = {
 
 function CreatePage() {
   const create = useServerFn(createCharacter);
-  const fetchCharacter = useServerFn(getMyCharacter);
+  const fetchBonds = useServerFn(listBonds);
   const fetchAllowance = useServerFn(getPortraitAllowance);
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -71,20 +71,22 @@ function CreatePage() {
   const [portraitFinal, setPortraitFinal] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
 
-  const existingQ = useQuery({
-    queryKey: ["character"],
-    queryFn: () => fetchCharacter(),
-  });
+  // Starting a new bond must NEVER open an existing one. The only reason to
+  // leave this page is having no free slot left.
+  const bondsQ = useQuery({ queryKey: ["bonds"], queryFn: () => fetchBonds() });
+  const noSlots = bondsQ.data ? bondsQ.data.slotsLeft <= 0 : false;
 
   useEffect(() => {
-    if (existingQ.data) navigate({ to: "/chat" });
-  }, [existingQ.data, navigate]);
+    if (noSlots) {
+      toast.error("All bond slots are full. Archive one to begin another.");
+      navigate({ to: "/bonds", replace: true });
+    }
+  }, [noSlots, navigate]);
 
   const allowanceQ = useQuery({
     queryKey: ["portrait-allowance"],
     queryFn: () => fetchAllowance(),
     staleTime: 10_000,
-    enabled: !existingQ.data,
   });
 
   function update<K extends keyof FormState>(k: K, v: FormState[K]) {
