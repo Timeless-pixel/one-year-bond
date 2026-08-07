@@ -3,8 +3,18 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { MAX_ACTIVE_BONDS } from "@/lib/bond-shared";
 import {
+  normalizeSettings,
+  relationshipLevel,
+  expressionFromMood,
+  isExpression,
+  LOVE_LANGUAGES,
+  type BondSettings,
+} from "@/lib/emotion-shared";
+import {
   resolveCharacter,
   generateLivingMoment,
+  generateDream,
+  generateInitiation,
   generateFarewell,
   generateLetter,
   milestoneTitle,
