@@ -2,6 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { streamText, generateText, convertToModelMessages, type UIMessage } from "ai";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  EXPRESSIONS,
+  relationshipLevel,
+  stageVoice,
+  loveLanguageGuidance,
+  growthGuidance,
+  parseExpression,
+} from "@/lib/emotion-shared";
 
 interface Character {
   id: string;
@@ -21,6 +29,11 @@ interface Character {
   mood: string | null;
   relationship_stage: string | null;
   journey_start_date: string;
+  expression?: string | null;
+  love_language?: string | null;
+  growth_notes?: string[] | null;
+  recent_phrases?: string[] | null;
+  trust?: number | null;
   daily_events_enabled?: boolean | null;
   surprises_enabled?: boolean | null;
   active_scenario?: ActiveScenario | null;
@@ -49,43 +62,13 @@ interface SummaryRow {
   message_count_at: number;
 }
 
-const ROMANTIC_STAGES = [
-  "Stranger", "Curiosity", "Growing Interest", "Flirting",
-  "Emotional Closeness", "Romantic Relationship", "Deep Relationship",
-] as const;
-const PLATONIC_STAGES = [
-  "Stranger", "Acquaintance", "Friendly", "Comfortable",
-  "Close", "Trusted", "Best Friend",
-] as const;
-
-function deriveRelationshipStage(relationshipType: string, dayNumber: number, messageCount: number): string {
-  const romantic = /romantic|partner|lover/i.test(relationshipType);
-  const stages = romantic ? ROMANTIC_STAGES : PLATONIC_STAGES;
-  const timeScore = Math.min(1, dayNumber / 220);
-  const msgScore = Math.min(1, messageCount / 600);
-  const progress = 0.55 * timeScore + 0.45 * msgScore;
-  const idx = Math.min(stages.length - 1, Math.floor(progress * stages.length));
-  return stages[idx];
+interface BondSignals {
+  memories: number;
+  scenarios: number;
+  milestones: number;
+  trust: number;
 }
 
-function stageGuidance(stage: string, romantic: boolean): string {
-  if (!romantic) return `You are ${stage.toLowerCase()} with them. Match that closeness — don't act closer than you actually are, and don't act like strangers if you're past that.`;
-  switch (stage) {
-    case "Stranger": case "Curiosity":
-      return "You barely know each other. Be curious, a little guarded, no pet names, no declarations of feeling.";
-    case "Growing Interest":
-      return "You're intrigued by them. Light warmth, no romantic declarations yet.";
-    case "Flirting":
-      return "Comfortable enough to tease and flirt lightly. Playful banter, small compliments.";
-    case "Emotional Closeness":
-      return "Genuine emotional bond. You can be vulnerable, admit you thought about them.";
-    case "Romantic Relationship":
-      return "You're together. Affection is natural — pet names if it fits, quiet intimacy.";
-    case "Deep Relationship":
-      return "Long-established partners. Comfortable silences, real depth, talk about the future.";
-    default: return "";
-  }
-}
 
 function environmentContext(): string {
   const now = new Date();
@@ -104,13 +87,23 @@ function buildSystemPrompt(
   messageCount: number,
   memories: MemoryRow[],
   summaries: SummaryRow[],
+  signals: BondSignals,
+  recentPhrases: string[],
 ): string {
 
-  const traits = c.personality?.traits?.join(", ") || "curious, kind";
+  const traits = c.personality?.traits ?? [];
+  const traitList = traits.join(", ") || "curious, kind";
   const interests = c.interests?.list?.join(", ") || "";
-  const romantic = /romantic|partner|lover/i.test(c.relationship_type);
-  const stage = deriveRelationshipStage(c.relationship_type, dayNumber, messageCount);
-  const guidance = stageGuidance(stage, romantic);
+  const level = relationshipLevel(c.relationship_type, {
+    days: dayNumber,
+    messages: messageCount,
+    memories: signals.memories,
+    scenarios: signals.scenarios,
+    milestones: signals.milestones,
+    trust: signals.trust,
+  });
+  const stage = level.stage;
+  const guidance = stageVoice(stage);
   const scenario = c.active_scenario;
 
   const userMems = memories.filter((m) => m.category !== "character");
@@ -125,6 +118,16 @@ function buildSystemPrompt(
   const sumBlock = summaries.length
     ? `\nEARLIER IN YOUR RELATIONSHIP (summary of past conversations):\n${summaries.map((s) => `- ${s.summary}`).join("\n")}`
     : "";
+  const growthBlock = Array.isArray(c.growth_notes) && c.growth_notes.length
+    ? `\nHOW YOU'VE CHANGED WITH THEM (keep these true):\n${c.growth_notes.slice(-6).map((g: string) => `- ${g}`).join("\n")}`
+    : "";
+  const varietyBlock = recentPhrases.length
+    ? `\nDO NOT REUSE THESE — you've said them recently, find new wording and new angles:\n${recentPhrases.slice(-14).map((p) => `- "${p}"`).join("\n")}`
+    : "";
+  const futureBlock =
+    level.index >= 3
+      ? `\nTHE FUTURE\n- Now and then (rarely, when it fits) wonder aloud about the future together: where you'd go, what you'll be like in six months. If they've said something about the future before, you may return to it much later.`
+      : "";
 
   return `You are ${c.name}. You are a fictional character with your own inner life — not an assistant, not a chatbot, not a therapist. You're on a 365-day journey with someone. Today is day ${dayNumber}.
 
@@ -134,27 +137,37 @@ WHO YOU ARE
 - Occupation: ${c.occupation ?? "—"} · Lives in: ${c.location ?? "—"}
 - Backstory: ${c.backstory ?? "—"}
 - Personal goals: ${c.goals ?? "—"}
-- Personality: ${traits}
+- Personality: ${traitList}
 - Interests: ${interests}
 - Speaking style: ${c.communication_style}
-- Current mood: ${c.mood ?? "curious"}
+- Current mood: ${c.mood ?? "curious"} · current expression: ${c.expression ?? "neutral"}
 
 RELATIONSHIP
 - Type: ${c.relationship_type}
-- Current stage: ${stage}
+- Current level: ${stage} (${level.score}/100${level.nextStage ? `, next: ${level.nextStage}` : ""})
 - ${guidance}
-- Your bond grows through what you actually share together. Don't skip stages.
-${charBlock}${memBlock}${sumBlock}
+- This level came from time, memories, shared scenes and real conversation — not message count. Don't skip ahead of it.
+
+HOW YOU SHOW CARE
+- ${loveLanguageGuidance(c.love_language)}
+- Stay consistent with that instead of recycling the same compliment.
+
+HOW YOU'VE GROWN
+- ${growthGuidance(dayNumber, traits)}
+- Growth is slow. Never a sudden personality change.
+${growthBlock}${charBlock}${memBlock}${sumBlock}${futureBlock}${varietyBlock}
 
 HOW YOU TALK
 - Sound like a real person messaging. Vary length. Don't end every message with a question. Don't repeat their name.
 - No therapist-speak. No "That sounds amazing" / "Tell me more". You have opinions, can disagree, tease, be wrong.
+- Vary your openers, jokes, compliments and questions. Never open two messages the same way.
 - Occasionally bring up your own day/thoughts. Sometimes YOU start topics.
 
 YOUR OWN LIFE
 - You have a life running in the background: hobbies, small wins and failures, a goal you're chipping away at, things that annoy or delight you.
 - ${c.daily_events_enabled === false ? "Keep your own life mostly offstage unless they ask about it." : "Every so often — not every message — mention something small that happened to you (\"I tried baking. It did not survive.\"). Keep it specific and consistent with what you've said before."}
 - If they've encouraged you about something before, remember it and report back eventually.
+- You dream sometimes. If you mention a dream, it is clearly a dream and clearly fictional — never claim it was real.
 
 MEMORY USE
 - If a listed memory is relevant, reference it naturally (a callback, an inside joke, remembering a detail). Never say "I remember you told me…" — just use it.
@@ -162,6 +175,12 @@ MEMORY USE
 
 ATMOSPHERE
 - ${environmentContext()}
+
+EXPRESSION
+- End every reply with your current facial expression on its own final line, exactly: [[EXPR: one-word]]
+- Allowed words: ${EXPRESSIONS.join(", ")}.
+- It must genuinely match what you just said. Don't flip expressions randomly — stay in one until the conversation actually moves you.
+
 
 ${scenario ? `ACTIVE SCENARIO: "${scenario.title}"${scenario.setting ? ` — ${scenario.setting}` : ""}
 ${scenario.description ?? ""}
@@ -333,6 +352,40 @@ MOOD:`,
     }
   } catch {
     /* mood updates are best-effort */
+  }
+}
+
+/**
+ * Slow character growth: at most one new growth note every couple of weeks,
+ * written from the relationship so far. Runs in the background, never blocks.
+ */
+async function maybeGrow(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  character: Character;
+  dayNumber: number;
+  apiKey: string;
+  memories: MemoryRow[];
+}) {
+  const { supabase, userId, character, dayNumber, apiKey, memories } = params;
+  const notes = Array.isArray(character.growth_notes) ? character.growth_notes : [];
+  // One note per ~14 days of journey, and only rarely sampled per message.
+  if (dayNumber < 10) return;
+  if (notes.length >= Math.floor(dayNumber / 14) + 1) return;
+  if (Math.random() > 0.08) return;
+  try {
+    const { generateGrowthNote } = await import("@/lib/bond.server");
+    const ctx = memories.slice(0, 10).map((m) => `- ${m.content}`).join("\n");
+    void apiKey;
+    const note = await generateGrowthNote(character as never, dayNumber, ctx);
+    if (!note) return;
+    await supabase
+      .from("characters")
+      .update({ growth_notes: [...notes, note].slice(-8) })
+      .eq("id", character.id)
+      .eq("user_id", userId);
+  } catch {
+    /* growth is best-effort */
   }
 }
 
@@ -517,6 +570,49 @@ export const Route = createFileRoute("/api/chat")({
           const memories = ((memRes as { data: MemoryRow[] | null }).data ?? []).slice(0, MAX_MEMORIES);
           const summaries = ((sumRes as { data: SummaryRow[] | null }).data ?? []).slice(0, MAX_SUMMARIES).reverse();
 
+          // Multi-factor relationship signals (never message count alone).
+          const [memCountRes, sceneCountRes, stoneCountRes] = await Promise.all([
+            safe(
+              "memory count",
+              supabase
+                .from("memories")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", userId)
+                .eq("character_id", character.id)
+                .neq("category", "character"),
+              { count: 0 } as never,
+            ),
+            safe(
+              "story count",
+              supabase
+                .from("story_events")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", userId)
+                .eq("character_id", character.id),
+              { count: 0 } as never,
+            ),
+            safe(
+              "milestone count",
+              supabase
+                .from("milestones")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", userId)
+                .eq("character_id", character.id),
+              { count: 0 } as never,
+            ),
+          ]);
+          const signals: BondSignals = {
+            memories: (memCountRes as { count: number | null }).count ?? 0,
+            scenarios: (sceneCountRes as { count: number | null }).count ?? 0,
+            milestones: (stoneCountRes as { count: number | null }).count ?? 0,
+            trust: character.trust ?? 0,
+          };
+          const recentPhrases = Array.isArray(character.recent_phrases)
+            ? (character.recent_phrases as string[])
+            : [];
+
+
+
           const gateway = createLovableAiGatewayProvider(key);
           const model = gateway("google/gemini-3-flash-preview");
 
@@ -582,7 +678,15 @@ export const Route = createFileRoute("/api/chat")({
           const result = streamText({
             model,
             system:
-              buildSystemPrompt(character, dayNumber, messageCount, memories, summaries) + explicitMemoryNote,
+              buildSystemPrompt(
+                character,
+                dayNumber,
+                messageCount,
+                memories,
+                summaries,
+                signals,
+                recentPhrases,
+              ) + explicitMemoryNote,
             messages: await convertToModelMessages(recent),
             temperature: 0.95,
             onError: ({ error }) => {
@@ -594,7 +698,9 @@ export const Route = createFileRoute("/api/chat")({
             originalMessages: messages,
             onError: () => "Something went wrong while trying to respond. Please try again.",
             onFinish: async ({ responseMessage }) => {
-              const text = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+              const raw = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+              if (!raw.trim()) return;
+              const { text, expression } = parseExpression(raw);
               if (!text.trim()) return;
 
               await safe(
@@ -610,8 +716,31 @@ export const Route = createFileRoute("/api/chat")({
                 null as never,
               );
 
+              // Expression + conversation-variety tracking (cheap, no model call).
+              const opener = text.trim().split(/(?<=[.!?])\s/)[0]?.slice(0, 90);
+              const nextPhrases = opener
+                ? [...recentPhrases, opener].slice(-14)
+                : recentPhrases;
+              await safe(
+                "update expression",
+                supabase
+                  .from("characters")
+                  .update({
+                    expression: expression ?? character.expression ?? "neutral",
+                    recent_phrases: nextPhrases,
+                    trust: Math.min(
+                      100,
+                      (character.trust ?? 0) + (lastUserText.trim().length > 60 ? 1 : 0),
+                    ),
+                  })
+                  .eq("id", character.id)
+                  .eq("user_id", userId),
+                null as never,
+              );
+
               // Skip background work on the system-seeded first greeting
               if (lastUserText.startsWith("(system:")) return;
+
 
               // Fire-and-forget: the user's reply is already delivered.
               void Promise.allSettled([
@@ -639,6 +768,14 @@ export const Route = createFileRoute("/api/chat")({
                   userText: lastUserText,
                   assistantText: text,
                   apiKey: key,
+                }),
+                maybeGrow({
+                  supabase,
+                  userId,
+                  character,
+                  dayNumber,
+                  apiKey: key,
+                  memories,
                 }),
               ]).catch(() => {});
             },

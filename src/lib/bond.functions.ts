@@ -3,8 +3,18 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { MAX_ACTIVE_BONDS } from "@/lib/bond-shared";
 import {
+  normalizeSettings,
+  relationshipLevel,
+  expressionFromMood,
+  isExpression,
+  LOVE_LANGUAGES,
+  type BondSettings,
+} from "@/lib/emotion-shared";
+import {
   resolveCharacter,
   generateLivingMoment,
+  generateDream,
+  generateInitiation,
   generateFarewell,
   generateLetter,
   milestoneTitle,
@@ -245,19 +255,36 @@ export const refreshLivingMoments = createServerFn({ method: "POST" })
       .order("importance", { ascending: false })
       .limit(8);
 
-    const moment = await generateLivingMoment(
-      character,
-      day,
-      (mems ?? []).map((m) => m.content),
-      hoursAway,
-    );
-    if (!moment) return { created: 0 };
+    const settings = normalizeSettings(character.settings);
+    const memList = (mems ?? []).map((m) => m.content);
+    const memContext = memList.map((m) => `- ${m}`).join("\n");
+
+    // Occasionally the moment is a dream or the character opening a
+    // conversation, when the user has those enabled.
+    const roll = Math.random();
+    let kind: string | null = null;
+    let content: string | null = null;
+
+    if (settings.dreams && roll < 0.18 && hoursAway >= 8) {
+      content = await generateDream(character, day, memContext);
+      kind = content ? "dream" : null;
+    } else if (settings.initiations && roll < 0.42 && hoursAway >= 10) {
+      content = await generateInitiation(character, day, memContext);
+      kind = content ? "initiation" : null;
+    }
+
+    if (!kind || !content) {
+      const moment = await generateLivingMoment(character, day, memList, hoursAway);
+      if (!moment) return { created: 0 };
+      kind = moment.kind;
+      content = moment.content;
+    }
 
     await context.supabase.from("living_moments").insert({
       user_id: context.userId,
       character_id: character.id,
-      kind: moment.kind,
-      content: moment.content,
+      kind,
+      content,
       day,
     });
     return { created: 1 };
@@ -444,4 +471,160 @@ export const ensureMilestoneLetter = createServerFn({ method: "POST" })
       day: due,
     });
     return { created: 1 };
+  });
+
+// -------------------- Emotional state, growth & settings --------------------
+
+/**
+ * Everything the UI needs to render the character's current emotional state:
+ * expression, relationship level (multi-factor, not message count) and the
+ * per-bond experience settings. Also persists a recomputed level.
+ */
+export const getBondExperience = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z.object({ characterId: z.string().uuid().optional() }).parse(i ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const resolved = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!resolved) return null;
+
+    const { data: c } = await context.supabase
+      .from("characters")
+      .select("*")
+      .eq("id", resolved.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!c) return null;
+
+    const [msgs, mems, scenes, stones] = await Promise.all([
+      context.supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", context.userId)
+        .eq("character_id", c.id),
+      context.supabase
+        .from("memories")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", context.userId)
+        .eq("character_id", c.id)
+        .neq("category", "character"),
+      context.supabase
+        .from("story_events")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", context.userId)
+        .eq("character_id", c.id),
+      context.supabase
+        .from("milestones")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", context.userId)
+        .eq("character_id", c.id),
+    ]);
+
+    const days = Math.max(
+      1,
+      Math.floor((Date.now() - new Date(c.journey_start_date).getTime()) / 86_400_000) + 1,
+    );
+    const level = relationshipLevel(c.relationship_type, {
+      days,
+      messages: msgs.count ?? 0,
+      memories: mems.count ?? 0,
+      scenarios: scenes.count ?? 0,
+      milestones: stones.count ?? 0,
+      trust: c.trust ?? 0,
+    });
+
+    if (c.relationship_stage !== level.stage || c.relationship_score !== level.score) {
+      await context.supabase
+        .from("characters")
+        .update({ relationship_stage: level.stage, relationship_score: level.score })
+        .eq("id", c.id)
+        .eq("user_id", context.userId);
+    }
+
+    const expression = isExpression(c.expression) ? c.expression : expressionFromMood(c.mood);
+
+    return {
+      characterId: c.id,
+      name: c.name as string,
+      mood: (c.mood as string | null) ?? null,
+      expression,
+      loveLanguage: (c.love_language as string | null) ?? null,
+      growthNotes: Array.isArray(c.growth_notes) ? (c.growth_notes as string[]) : [],
+      settings: normalizeSettings(c.settings),
+      level,
+      day: days,
+      signals: {
+        messages: msgs.count ?? 0,
+        memories: mems.count ?? 0,
+        scenarios: scenes.count ?? 0,
+        milestones: stones.count ?? 0,
+      },
+    };
+  });
+
+export const updateBondSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        characterId: z.string().uuid().optional(),
+        initiations: z.boolean().optional(),
+        dreams: z.boolean().optional(),
+        backgrounds: z.boolean().optional(),
+        expressions: z.boolean().optional(),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!c) throw new Error("No bond selected.");
+    const { data: row } = await context.supabase
+      .from("characters")
+      .select("settings")
+      .eq("id", c.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    const current = normalizeSettings(row?.settings);
+    const next: BondSettings = {
+      initiations: data.initiations ?? current.initiations,
+      dreams: data.dreams ?? current.dreams,
+      backgrounds: data.backgrounds ?? current.backgrounds,
+      expressions: data.expressions ?? current.expressions,
+    };
+    const { error } = await context.supabase
+      .from("characters")
+      .update({ settings: next as unknown as Record<string, boolean>, living_moments_enabled: next.initiations || next.dreams })
+      .eq("id", c.id)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return next;
+  });
+
+export const updateLoveLanguage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        characterId: z.string().uuid().optional(),
+        loveLanguage: z.enum(LOVE_LANGUAGES),
+      })
+      .parse(i),
+  )
+  .handler(async ({ data, context }) => {
+    const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
+      includeArchived: true,
+    });
+    if (!c) throw new Error("No bond selected.");
+    const { error } = await context.supabase
+      .from("characters")
+      .update({ love_language: data.loveLanguage })
+      .eq("id", c.id)
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

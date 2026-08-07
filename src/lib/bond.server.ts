@@ -172,3 +172,55 @@ FAREWELL:`,
   );
   return text ? text.slice(0, 1200) : null;
 }
+
+/** A fictional dream the character had — reflects recent conversation. */
+export async function generateDream(c: CharacterLike, day: number, context: string) {
+  const text = await gatewayText(
+    `${persona(c)}
+
+Day ${day} together. Tell them about a dream you had last night. 2-3 sentences, first person.
+Rules: it is explicitly a DREAM — surreal, softly strange, never presented as real. Let it echo something from your recent conversations. No moral, no explanation, no question at the end.
+
+RECENT THINGS BETWEEN YOU:
+${context || "(not much yet)"}
+
+DREAM:`,
+    1.0,
+  );
+  return text ? text.replace(/^["']|["']$/g, "").slice(0, 400) : null;
+}
+
+/** The character opening a conversation on their own. */
+export async function generateInitiation(c: CharacterLike, day: number, context: string) {
+  const text = await gatewayText(
+    `${persona(c)}
+
+Day ${day} together. You are starting the conversation today — they haven't messaged you.
+Write ONE short opener (1-2 sentences, under 200 characters) in your own voice. It can be a thought you've been sitting with, something you want to ask them, something funny you remembered, or a simple check-in.
+Rules: no greeting boilerplate ("Hey there!"), no assistant energy, no emoji spam. Make it specific to you and them.
+
+WHAT YOU KNOW ABOUT THEM:
+${context || "(early days)"}
+
+OPENER:`,
+    1.0,
+  );
+  return text ? text.replace(/^["']|["']$/g, "").slice(0, 300) : null;
+}
+
+/** A slow, in-character observation about how the character has grown. */
+export async function generateGrowthNote(c: CharacterLike, day: number, context: string) {
+  const text = await gatewayText(
+    `${persona(c)}
+
+It is day ${day} of a year-long relationship. In ONE sentence (max 140 chars), describe — in third person, factually — one small way this character has changed with this person since they met, while staying true to their core personality. Example: "Talks about her own bad days now instead of deflecting."
+Never invent a personality reversal. Growth is subtle.
+
+CONTEXT:
+${context || "(early days)"}
+
+CHANGE:`,
+    0.7,
+  );
+  return text ? text.replace(/^["']|["']$/g, "").slice(0, 200) : null;
+}

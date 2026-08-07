@@ -8,6 +8,7 @@ import { getLivingMoments, refreshLivingMoments, setLivingMomentStatus } from "@
 import { useActiveBondId } from "@/hooks/useActiveBond";
 import { MOMENT_KIND_LABEL, type LivingMoment } from "@/lib/bond-shared";
 import { useQueryClient } from "@tanstack/react-query";
+import { EXPRESSION_EMOJI, expressionFromMood, isExpression } from "@/lib/emotion-shared";
 
 export const Route = createFileRoute("/_authenticated/home")({
   component: HomePage,
@@ -71,6 +72,10 @@ function HomePage() {
     );
   }
 
+  const expression = isExpression(character.expression)
+    ? character.expression
+    : expressionFromMood(character.mood);
+  const score = Math.max(0, Math.min(100, Number(character.relationship_score ?? 0)));
   const day = computeDay(character.journey_start_date);
   const daysLeft = 365 - day;
   const pct = (day / 365) * 100;
@@ -169,11 +174,23 @@ function HomePage() {
               <div className="text-xs uppercase tracking-widest text-muted-foreground">
                 Relationship
               </div>
-              <div className="mt-2 text-2xl">{character.relationship_type}</div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                You're currently {character.relationship_stage?.toLowerCase() ?? "getting to know each other"}.
+              <div className="mt-2 flex items-baseline justify-between gap-3">
+                <div className="text-2xl">{character.relationship_stage ?? character.relationship_type}</div>
+                <div className="text-sm text-muted-foreground">
+                  {EXPRESSION_EMOJI[expression] ?? "🙂"} {expression}
+                </div>
+              </div>
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{ width: `${score}%`, background: "var(--gradient-primary)" }}
+                />
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {score}/100 — grows with time, memories and shared moments.
               </p>
             </div>
+
 
             {(() => {
               const latest = (memories as Array<{ id: string; content: string; category: string; created_at: string }>).find(

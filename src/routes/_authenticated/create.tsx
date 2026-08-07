@@ -2,7 +2,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createCharacter, getMyCharacter, getPortraitAllowance } from "@/lib/character.functions";
+import { createCharacter, getPortraitAllowance } from "@/lib/character.functions";
+import { listBonds } from "@/lib/bond.functions";
+import { setActiveBondId } from "@/hooks/useActiveBond";
 import { streamImage } from "@/lib/streamImage";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -57,7 +59,7 @@ const initial: FormState = {
 
 function CreatePage() {
   const create = useServerFn(createCharacter);
-  const fetchCharacter = useServerFn(getMyCharacter);
+  const fetchBonds = useServerFn(listBonds);
   const fetchAllowance = useServerFn(getPortraitAllowance);
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -69,20 +71,22 @@ function CreatePage() {
   const [portraitFinal, setPortraitFinal] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
 
-  const existingQ = useQuery({
-    queryKey: ["character"],
-    queryFn: () => fetchCharacter(),
-  });
+  // Starting a new bond must NEVER open an existing one. The only reason to
+  // leave this page is having no free slot left.
+  const bondsQ = useQuery({ queryKey: ["bonds"], queryFn: () => fetchBonds() });
+  const noSlots = bondsQ.data ? bondsQ.data.slotsLeft <= 0 : false;
 
   useEffect(() => {
-    if (existingQ.data) navigate({ to: "/chat" });
-  }, [existingQ.data, navigate]);
+    if (noSlots) {
+      toast.error("All bond slots are full. Archive one to begin another.");
+      navigate({ to: "/bonds", replace: true });
+    }
+  }, [noSlots, navigate]);
 
   const allowanceQ = useQuery({
     queryKey: ["portrait-allowance"],
     queryFn: () => fetchAllowance(),
     staleTime: 10_000,
-    enabled: !existingQ.data,
   });
 
   function update<K extends keyof FormState>(k: K, v: FormState[K]) {
@@ -161,7 +165,7 @@ function CreatePage() {
     }
     setSubmitting(true);
     try {
-      await create({
+      const created = (await create({
         data: {
           name: form.name.trim(),
           style: form.style,
@@ -182,10 +186,12 @@ function CreatePage() {
           goals: form.goals,
           avatar_url: portrait && portraitFinal ? portrait : undefined,
         },
-      });
-      await qc.invalidateQueries({ queryKey: ["character"] });
+      })) as { id: string } | null;
+      // Only now does the new bond become the active one.
+      if (created?.id) setActiveBondId(created.id);
+      await qc.invalidateQueries();
       toast.success(`${form.name} is here.`);
-      navigate({ to: "/chat" });
+      navigate({ to: "/bonds" });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create");
     } finally {
