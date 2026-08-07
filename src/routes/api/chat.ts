@@ -644,7 +644,15 @@ export const Route = createFileRoute("/api/chat")({
           const result = streamText({
             model,
             system:
-              buildSystemPrompt(character, dayNumber, messageCount, memories, summaries) + explicitMemoryNote,
+              buildSystemPrompt(
+                character,
+                dayNumber,
+                messageCount,
+                memories,
+                summaries,
+                signals,
+                recentPhrases,
+              ) + explicitMemoryNote,
             messages: await convertToModelMessages(recent),
             temperature: 0.95,
             onError: ({ error }) => {
@@ -656,7 +664,9 @@ export const Route = createFileRoute("/api/chat")({
             originalMessages: messages,
             onError: () => "Something went wrong while trying to respond. Please try again.",
             onFinish: async ({ responseMessage }) => {
-              const text = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+              const raw = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+              if (!raw.trim()) return;
+              const { text, expression } = parseExpression(raw);
               if (!text.trim()) return;
 
               await safe(
@@ -672,8 +682,27 @@ export const Route = createFileRoute("/api/chat")({
                 null as never,
               );
 
+              // Expression + conversation-variety tracking (cheap, no model call).
+              const opener = text.trim().split(/(?<=[.!?])\s/)[0]?.slice(0, 90);
+              const nextPhrases = opener
+                ? [...recentPhrases, opener].slice(-14)
+                : recentPhrases;
+              await safe(
+                "update expression",
+                supabase
+                  .from("characters")
+                  .update({
+                    expression: expression ?? character.expression ?? "neutral",
+                    recent_phrases: nextPhrases,
+                  })
+                  .eq("id", character.id)
+                  .eq("user_id", userId),
+                null as never,
+              );
+
               // Skip background work on the system-seeded first greeting
               if (lastUserText.startsWith("(system:")) return;
+
 
               // Fire-and-forget: the user's reply is already delivered.
               void Promise.allSettled([
