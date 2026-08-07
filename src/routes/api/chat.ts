@@ -355,6 +355,40 @@ MOOD:`,
   }
 }
 
+/**
+ * Slow character growth: at most one new growth note every couple of weeks,
+ * written from the relationship so far. Runs in the background, never blocks.
+ */
+async function maybeGrow(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  character: Character;
+  dayNumber: number;
+  apiKey: string;
+  memories: MemoryRow[];
+}) {
+  const { supabase, userId, character, dayNumber, apiKey, memories } = params;
+  const notes = Array.isArray(character.growth_notes) ? character.growth_notes : [];
+  // One note per ~14 days of journey, and only rarely sampled per message.
+  if (dayNumber < 10) return;
+  if (notes.length >= Math.floor(dayNumber / 14) + 1) return;
+  if (Math.random() > 0.08) return;
+  try {
+    const { generateGrowthNote } = await import("@/lib/bond.server");
+    const ctx = memories.slice(0, 10).map((m) => `- ${m.content}`).join("\n");
+    void apiKey;
+    const note = await generateGrowthNote(character as never, dayNumber, ctx);
+    if (!note) return;
+    await supabase
+      .from("characters")
+      .update({ growth_notes: [...notes, note].slice(-8) })
+      .eq("id", character.id)
+      .eq("user_id", userId);
+  } catch {
+    /* growth is best-effort */
+  }
+}
+
 /** Never let a background/context query stall the user-facing reply. */
 async function safe<T>(label: string, p: PromiseLike<T>, fallback: T, ms = 5000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -694,6 +728,10 @@ export const Route = createFileRoute("/api/chat")({
                   .update({
                     expression: expression ?? character.expression ?? "neutral",
                     recent_phrases: nextPhrases,
+                    trust: Math.min(
+                      100,
+                      (character.trust ?? 0) + (lastUserText.trim().length > 60 ? 1 : 0),
+                    ),
                   })
                   .eq("id", character.id)
                   .eq("user_id", userId),
@@ -730,6 +768,14 @@ export const Route = createFileRoute("/api/chat")({
                   userText: lastUserText,
                   assistantText: text,
                   apiKey: key,
+                }),
+                maybeGrow({
+                  supabase,
+                  userId,
+                  character,
+                  dayNumber,
+                  apiKey: key,
+                  memories,
                 }),
               ]).catch(() => {});
             },
