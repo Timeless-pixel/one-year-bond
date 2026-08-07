@@ -24,9 +24,11 @@ export type Database = {
           communication_style: string | null
           created_at: string
           daily_events_enabled: boolean
+          expression: string
           farewell_message: string | null
           gender: string | null
           goals: string | null
+          growth_notes: Json
           id: string
           interests: Json | null
           journey_end_date: string
@@ -34,16 +36,21 @@ export type Database = {
           last_active_at: string
           living_moments_enabled: boolean
           location: string | null
+          love_language: string | null
           mood: string | null
           name: string
           occupation: string | null
           personality: Json | null
           pronouns: string | null
+          recent_phrases: Json
+          relationship_score: number
           relationship_stage: string | null
           relationship_type: string
+          settings: Json
           status: string
           style: string
           surprises_enabled: boolean
+          trust: number
           updated_at: string
           user_id: string
         }
@@ -56,9 +63,11 @@ export type Database = {
           communication_style?: string | null
           created_at?: string
           daily_events_enabled?: boolean
+          expression?: string
           farewell_message?: string | null
           gender?: string | null
           goals?: string | null
+          growth_notes?: Json
           id?: string
           interests?: Json | null
           journey_end_date?: string
@@ -66,16 +75,21 @@ export type Database = {
           last_active_at?: string
           living_moments_enabled?: boolean
           location?: string | null
+          love_language?: string | null
           mood?: string | null
           name: string
           occupation?: string | null
           personality?: Json | null
           pronouns?: string | null
+          recent_phrases?: Json
+          relationship_score?: number
           relationship_stage?: string | null
           relationship_type?: string
+          settings?: Json
           status?: string
           style: string
           surprises_enabled?: boolean
+          trust?: number
           updated_at?: string
           user_id: string
         }
@@ -88,9 +102,11 @@ export type Database = {
           communication_style?: string | null
           created_at?: string
           daily_events_enabled?: boolean
+          expression?: string
           farewell_message?: string | null
           gender?: string | null
           goals?: string | null
+          growth_notes?: Json
           id?: string
           interests?: Json | null
           journey_end_date?: string
@@ -98,16 +114,21 @@ export type Database = {
           last_active_at?: string
           living_moments_enabled?: boolean
           location?: string | null
+          love_language?: string | null
           mood?: string | null
           name?: string
           occupation?: string | null
           personality?: Json | null
           pronouns?: string | null
+          recent_phrases?: Json
+          relationship_score?: number
           relationship_stage?: string | null
           relationship_type?: string
+          settings?: Json
           status?: string
           style?: string
           surprises_enabled?: boolean
+          trust?: number
           updated_at?: string
           user_id?: string
         }
