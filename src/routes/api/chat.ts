@@ -49,43 +49,13 @@ interface SummaryRow {
   message_count_at: number;
 }
 
-const ROMANTIC_STAGES = [
-  "Stranger", "Curiosity", "Growing Interest", "Flirting",
-  "Emotional Closeness", "Romantic Relationship", "Deep Relationship",
-] as const;
-const PLATONIC_STAGES = [
-  "Stranger", "Acquaintance", "Friendly", "Comfortable",
-  "Close", "Trusted", "Best Friend",
-] as const;
-
-function deriveRelationshipStage(relationshipType: string, dayNumber: number, messageCount: number): string {
-  const romantic = /romantic|partner|lover/i.test(relationshipType);
-  const stages = romantic ? ROMANTIC_STAGES : PLATONIC_STAGES;
-  const timeScore = Math.min(1, dayNumber / 220);
-  const msgScore = Math.min(1, messageCount / 600);
-  const progress = 0.55 * timeScore + 0.45 * msgScore;
-  const idx = Math.min(stages.length - 1, Math.floor(progress * stages.length));
-  return stages[idx];
+interface BondSignals {
+  memories: number;
+  scenarios: number;
+  milestones: number;
+  trust: number;
 }
 
-function stageGuidance(stage: string, romantic: boolean): string {
-  if (!romantic) return `You are ${stage.toLowerCase()} with them. Match that closeness — don't act closer than you actually are, and don't act like strangers if you're past that.`;
-  switch (stage) {
-    case "Stranger": case "Curiosity":
-      return "You barely know each other. Be curious, a little guarded, no pet names, no declarations of feeling.";
-    case "Growing Interest":
-      return "You're intrigued by them. Light warmth, no romantic declarations yet.";
-    case "Flirting":
-      return "Comfortable enough to tease and flirt lightly. Playful banter, small compliments.";
-    case "Emotional Closeness":
-      return "Genuine emotional bond. You can be vulnerable, admit you thought about them.";
-    case "Romantic Relationship":
-      return "You're together. Affection is natural — pet names if it fits, quiet intimacy.";
-    case "Deep Relationship":
-      return "Long-established partners. Comfortable silences, real depth, talk about the future.";
-    default: return "";
-  }
-}
 
 function environmentContext(): string {
   const now = new Date();
