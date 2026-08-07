@@ -245,19 +245,36 @@ export const refreshLivingMoments = createServerFn({ method: "POST" })
       .order("importance", { ascending: false })
       .limit(8);
 
-    const moment = await generateLivingMoment(
-      character,
-      day,
-      (mems ?? []).map((m) => m.content),
-      hoursAway,
-    );
-    if (!moment) return { created: 0 };
+    const settings = normalizeSettings(character.settings);
+    const memList = (mems ?? []).map((m) => m.content);
+    const memContext = memList.map((m) => `- ${m}`).join("\n");
+
+    // Occasionally the moment is a dream or the character opening a
+    // conversation, when the user has those enabled.
+    const roll = Math.random();
+    let kind: string | null = null;
+    let content: string | null = null;
+
+    if (settings.dreams && roll < 0.18 && hoursAway >= 8) {
+      content = await generateDream(character, day, memContext);
+      kind = content ? "dream" : null;
+    } else if (settings.initiations && roll < 0.42 && hoursAway >= 10) {
+      content = await generateInitiation(character, day, memContext);
+      kind = content ? "initiation" : null;
+    }
+
+    if (!kind || !content) {
+      const moment = await generateLivingMoment(character, day, memList, hoursAway);
+      if (!moment) return { created: 0 };
+      kind = moment.kind;
+      content = moment.content;
+    }
 
     await context.supabase.from("living_moments").insert({
       user_id: context.userId,
       character_id: character.id,
-      kind: moment.kind,
-      content: moment.content,
+      kind,
+      content,
       day,
     });
     return { created: 1 };
