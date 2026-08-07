@@ -8,6 +8,8 @@ import { getLivingMoments, refreshLivingMoments, setLivingMomentStatus } from "@
 import { useActiveBondId } from "@/hooks/useActiveBond";
 import { MOMENT_KIND_LABEL, type LivingMoment } from "@/lib/bond-shared";
 import { useQueryClient } from "@tanstack/react-query";
+import { getBondExperience } from "@/lib/bond.functions";
+import { EXPRESSION_EMOJI, expressionFromMood, isExpression } from "@/lib/emotion-shared";
 
 export const Route = createFileRoute("/_authenticated/home")({
   component: HomePage,
@@ -71,6 +73,10 @@ function HomePage() {
     );
   }
 
+  const expression = isExpression(character.expression)
+    ? character.expression
+    : expressionFromMood(character.mood);
+  const score = Math.max(0, Math.min(100, Number(character.relationship_score ?? 0)));
   const day = computeDay(character.journey_start_date);
   const daysLeft = 365 - day;
   const pct = (day / 365) * 100;
