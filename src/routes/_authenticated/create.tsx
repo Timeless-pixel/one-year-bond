@@ -165,7 +165,7 @@ function CreatePage() {
     }
     setSubmitting(true);
     try {
-      await create({
+      const created = (await create({
         data: {
           name: form.name.trim(),
           style: form.style,
@@ -186,10 +186,12 @@ function CreatePage() {
           goals: form.goals,
           avatar_url: portrait && portraitFinal ? portrait : undefined,
         },
-      });
-      await qc.invalidateQueries({ queryKey: ["character"] });
+      })) as { id: string } | null;
+      // Only now does the new bond become the active one.
+      if (created?.id) setActiveBondId(created.id);
+      await qc.invalidateQueries();
       toast.success(`${form.name} is here.`);
-      navigate({ to: "/chat" });
+      navigate({ to: "/bonds" });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create");
     } finally {
