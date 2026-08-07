@@ -598,7 +598,7 @@ export const updateBondSettings = createServerFn({ method: "POST" })
     };
     const { error } = await context.supabase
       .from("characters")
-      .update({ settings: next, living_moments_enabled: next.initiations || next.dreams })
+      .update({ settings: next as unknown as Record<string, boolean>, living_moments_enabled: next.initiations || next.dreams })
       .eq("id", c.id)
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);

@@ -29,6 +29,11 @@ interface Character {
   mood: string | null;
   relationship_stage: string | null;
   journey_start_date: string;
+  expression?: string | null;
+  love_language?: string | null;
+  growth_notes?: string[] | null;
+  recent_phrases?: string[] | null;
+  trust?: number | null;
   daily_events_enabled?: boolean | null;
   surprises_enabled?: boolean | null;
   active_scenario?: ActiveScenario | null;
@@ -114,7 +119,7 @@ function buildSystemPrompt(
     ? `\nEARLIER IN YOUR RELATIONSHIP (summary of past conversations):\n${summaries.map((s) => `- ${s.summary}`).join("\n")}`
     : "";
   const growthBlock = Array.isArray(c.growth_notes) && c.growth_notes.length
-    ? `\nHOW YOU'VE CHANGED WITH THEM (keep these true):\n${c.growth_notes.slice(-6).map((g) => `- ${g}`).join("\n")}`
+    ? `\nHOW YOU'VE CHANGED WITH THEM (keep these true):\n${c.growth_notes.slice(-6).map((g: string) => `- ${g}`).join("\n")}`
     : "";
   const varietyBlock = recentPhrases.length
     ? `\nDO NOT REUSE THESE — you've said them recently, find new wording and new angles:\n${recentPhrases.slice(-14).map((p) => `- "${p}"`).join("\n")}`
