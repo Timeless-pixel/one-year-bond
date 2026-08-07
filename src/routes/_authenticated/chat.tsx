@@ -9,6 +9,7 @@ import { AppShell } from "@/components/AppShell";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Send } from "lucide-react";
+import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, type Expression } from "@/lib/emotion-shared";
 
 export const Route = createFileRoute("/_authenticated/chat")({
   component: ChatPage,
@@ -203,6 +204,13 @@ function ChatWindow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
 
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const liveExpression =
+    parseExpression(
+      lastAssistant?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "",
+    ).expression ??
+    ((character.expression as Expression | null) ?? "neutral");
+
   return (
     <div className="mx-auto flex h-[100dvh] max-w-3xl flex-col px-4 pt-4 md:pt-6">
       <header className="glass mb-4 flex items-center gap-3 rounded-2xl px-4 py-3">
@@ -212,6 +220,8 @@ function ChatWindow({
             background: character.avatar_url
               ? `center/cover url(${character.avatar_url})`
               : "var(--gradient-primary)",
+            boxShadow: `0 0 0 2px ${EXPRESSION_GLOW[liveExpression] ?? "transparent"}, 0 0 22px -4px ${EXPRESSION_GLOW[liveExpression] ?? "transparent"}`,
+            transition: "box-shadow 700ms ease",
           }}
         >
           {!character.avatar_url && (
@@ -226,7 +236,7 @@ function ChatWindow({
             <span className="h-1.5 w-1.5 rounded-full bg-green-400" style={{ animation: "aurora-pulse 2s infinite" }} />
           </div>
           <div className="text-xs text-muted-foreground">
-            {character.relationship_stage} · Mood {character.mood}
+            {character.relationship_stage} · {EXPRESSION_EMOJI[liveExpression] ?? "🙂"} {liveExpression}
           </div>
         </div>
       </header>
@@ -238,7 +248,9 @@ function ChatWindow({
             return !(m.role === "user" && t.startsWith("(system:"));
           })
           .map((m: UIMessage) => {
-            const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+            const text = parseExpression(
+              m.parts.map((p) => (p.type === "text" ? p.text : "")).join(""),
+            ).text;
             const mine = m.role === "user";
             return (
               <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>

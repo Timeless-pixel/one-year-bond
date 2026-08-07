@@ -11,6 +11,7 @@ import { getMyCharacter } from "@/lib/character.functions";
 import { getScenarioSession, completeScenario } from "@/lib/scenario.functions";
 import { parseChoices } from "@/lib/scenario-shared";
 import { Send, X } from "lucide-react";
+import { parseExpression } from "@/lib/emotion-shared";
 
 export const Route = createFileRoute("/_authenticated/scenario/$sessionId")({
   component: ScenarioPlayPage,
@@ -245,7 +246,9 @@ function ScenarioWindow({
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-1 pb-4">
         {visible.map((m) => {
-          const raw = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+          const raw = parseExpression(
+            m.parts.map((p) => (p.type === "text" ? p.text : "")).join(""),
+          ).text;
           const text = m.role === "assistant" ? parseChoices(raw).body : raw;
           const mine = m.role === "user";
           return (
