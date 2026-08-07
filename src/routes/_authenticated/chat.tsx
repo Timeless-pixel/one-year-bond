@@ -63,7 +63,9 @@ interface CharacterRow {
   avatar_url: string | null;
   mood: string | null;
   relationship_stage: string | null;
+  expression?: string | null;
 }
+
 
 const REQUEST_TIMEOUT_MS = 60_000;
 
