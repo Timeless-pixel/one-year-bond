@@ -2,6 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { streamText, generateText, convertToModelMessages, type UIMessage } from "ai";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  EXPRESSIONS,
+  relationshipLevel,
+  stageVoice,
+  loveLanguageGuidance,
+  growthGuidance,
+  parseExpression,
+} from "@/lib/emotion-shared";
 
 interface Character {
   id: string;
