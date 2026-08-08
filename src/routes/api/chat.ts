@@ -491,11 +491,13 @@ export const Route = createFileRoute("/api/chat")({
           let messages: UIMessage[];
           let scenarioSessionId: string | null = null;
           let characterId: string | null = null;
+          let localHour: number | null = null;
           try {
             const body = (await request.json()) as {
               messages: UIMessage[];
               scenarioSessionId?: string | null;
               characterId?: string | null;
+              localHour?: number | null;
             };
             messages = body.messages;
             characterId =
@@ -506,10 +508,15 @@ export const Route = createFileRoute("/api/chat")({
               typeof body.scenarioSessionId === "string" && body.scenarioSessionId.length > 0
                 ? body.scenarioSessionId
                 : null;
+            localHour =
+              typeof body.localHour === "number" && body.localHour >= 0 && body.localHour <= 23
+                ? Math.floor(body.localHour)
+                : null;
           } catch {
             return new Response("Bad request", { status: 400 });
           }
           if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
+
 
 
           const key = process.env.LOVABLE_API_KEY;
