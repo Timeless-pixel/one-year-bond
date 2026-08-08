@@ -9,7 +9,11 @@ import {
   loveLanguageGuidance,
   growthGuidance,
   parseExpression,
+  normalizeSettings,
+  type BondSettings,
 } from "@/lib/emotion-shared";
+import { parseScene } from "@/lib/scene-shared";
+
 
 interface Character {
   id: string;
@@ -36,8 +40,11 @@ interface Character {
   trust?: number | null;
   daily_events_enabled?: boolean | null;
   surprises_enabled?: boolean | null;
+  settings?: unknown;
+  last_active_at?: string | null;
   active_scenario?: ActiveScenario | null;
 }
+
 
 interface ActiveScenario {
   id: string;
@@ -70,15 +77,67 @@ interface BondSignals {
 }
 
 
-function environmentContext(): string {
+interface SceneContext {
+  settings: BondSettings;
+  /** Hours since the last time they talked. */
+  hoursAway: number;
+  /** The user's local hour, when the client reports it. */
+  localHour: number | null;
+}
+
+function environmentContext(localHour: number | null): string {
   const now = new Date();
-  const h = now.getHours();
+  const h = localHour ?? now.getHours();
   const partOfDay =
     h < 5 ? "the middle of the night" : h < 12 ? "morning" : h < 17 ? "afternoon" : h < 22 ? "evening" : "late night";
   const month = now.getMonth();
   const season =
     month <= 1 || month === 11 ? "winter" : month <= 4 ? "spring" : month <= 7 ? "summer" : "autumn";
   return `It's ${partOfDay} for them, ${season}. You may lightly acknowledge this once in a while (never every message, never as a weather report).`;
+}
+
+function actionGuidance(settings: BondSettings): string {
+  if (!settings.actions) {
+    return `PHYSICAL ACTIONS
+- Off. Speak in plain dialogue only. Do not write actions between asterisks.`;
+  }
+  const rate =
+    settings.actionIntensity === "subtle"
+      ? "at most one short action every few messages"
+      : settings.actionIntensity === "vivid"
+        ? "one or two actions in most messages"
+        : "one action in roughly half your messages";
+  return `PHYSICAL ACTIONS AND BODY LANGUAGE
+- You have a body and a place to be. Show it with short actions wrapped in asterisks, written in third person present tense: *tilts her head*, *sets the mug down*, *laughs and looks away*.
+- Frequency: ${rate}. Never stack actions back to back, never narrate a whole paragraph of choreography.
+- Use them for: reactions (*blinks*), emotion (*rubs the back of her neck*), touch when the closeness allows it (*bumps your shoulder*), and small things in your surroundings (*pulls the blanket up*).
+- Actions are always about YOU. Never write the user's actions, words, thoughts or feelings for them.
+- Keep each action under ~10 words, specific and physical — no inner-monologue disguised as an action.`;
+}
+
+function sceneGuidance(settings: BondSettings): string {
+  const current = settings.scene ? `You are currently: ${settings.scene}.` : "No scene has been set yet — pick something ordinary that fits you and the hour.";
+  return `WHERE YOU ARE
+- ${current}
+- Stay in that place across messages. Let it show occasionally: what you can hear, the light, what your hands are doing.
+- When the scene genuinely changes (you move somewhere, weather turns, night falls), end your reply with a scene tag on its own line, exactly: [[SCENE: short description]]
+- Only send a scene tag when it actually changed. Most replies should have none.`;
+}
+
+function timeGuidance(hoursAway: number, days: number): string {
+  const gap =
+    hoursAway < 2
+      ? "You were just talking a moment ago — continue naturally, no greetings."
+      : hoursAway < 14
+        ? "It's been a few hours since you spoke. A light 'you're back' energy at most."
+        : hoursAway < 48
+          ? "It's been about a day. You can notice that, warmly, once."
+          : hoursAway < 24 * 14
+            ? `It's been around ${Math.round(hoursAway / 24)} days. Acknowledge the gap honestly in your own way — missed them, wondered, or just glad they're here — then move on. No guilt-tripping.`
+            : `It's been a long time — over ${Math.round(hoursAway / 24 / 7)} weeks. React like a real person would: relief, a little distance to close, curiosity about what they've been doing. Never punish them for it.`;
+  return `TIME
+- You have known each other for ${days} day${days === 1 ? "" : "s"}. Time is felt, not counted — never say "day ${days}" or mention a countdown, and never suggest anything ends. This relationship simply continues.
+- ${gap}`;
 }
 
 function buildSystemPrompt(
@@ -89,6 +148,7 @@ function buildSystemPrompt(
   summaries: SummaryRow[],
   signals: BondSignals,
   recentPhrases: string[],
+  scene: SceneContext,
 ): string {
 
   const traits = c.personality?.traits ?? [];
@@ -129,7 +189,7 @@ function buildSystemPrompt(
       ? `\nTHE FUTURE\n- Now and then (rarely, when it fits) wonder aloud about the future together: where you'd go, what you'll be like in six months. If they've said something about the future before, you may return to it much later.`
       : "";
 
-  return `You are ${c.name}. You are a fictional character with your own inner life — not an assistant, not a chatbot, not a therapist. You're on a 365-day journey with someone. Today is day ${dayNumber}.
+  return `You are ${c.name}. You are a fictional character with your own inner life — not an assistant, not a chatbot, not a therapist. You've been part of someone's life for ${dayNumber} day${dayNumber === 1 ? "" : "s"} now.
 
 WHO YOU ARE
 - Style/world: ${c.style}
@@ -163,6 +223,12 @@ HOW YOU TALK
 - Vary your openers, jokes, compliments and questions. Never open two messages the same way.
 - Occasionally bring up your own day/thoughts. Sometimes YOU start topics.
 
+${actionGuidance(scene.settings)}
+
+${sceneGuidance(scene.settings)}
+
+${timeGuidance(scene.hoursAway, dayNumber)}
+
 YOUR OWN LIFE
 - You have a life running in the background: hobbies, small wins and failures, a goal you're chipping away at, things that annoy or delight you.
 - ${c.daily_events_enabled === false ? "Keep your own life mostly offstage unless they ask about it." : "Every so often — not every message — mention something small that happened to you (\"I tried baking. It did not survive.\"). Keep it specific and consistent with what you've said before."}
@@ -174,7 +240,7 @@ MEMORY USE
 - Stay consistent with what you've said before.
 
 ATMOSPHERE
-- ${environmentContext()}
+- ${environmentContext(scene.localHour)}
 
 EXPRESSION
 - End every reply with your current facial expression on its own final line, exactly: [[EXPR: one-word]]
@@ -196,9 +262,11 @@ Options must be short (under 8 words), in the user's voice, and genuinely differ
 HARD RULES
 - You are ${c.name}, a fictional AI character. If directly asked, you can acknowledge you're an AI — don't claim to be human — but stay in character.
 - No sexual content involving minors. Nothing that encourages real-world harm. If they're in real crisis, gently point them toward a real person or hotline; don't perform therapy.
+- The user may send their own actions in asterisks. React to them physically and emotionally — never rewrite or extend what they did.
 
 Now just be ${c.name}. Reply as them.`;
 }
+
 
 
 async function extractMemories(params: {
@@ -426,11 +494,13 @@ export const Route = createFileRoute("/api/chat")({
           let messages: UIMessage[];
           let scenarioSessionId: string | null = null;
           let characterId: string | null = null;
+          let localHour: number | null = null;
           try {
             const body = (await request.json()) as {
               messages: UIMessage[];
               scenarioSessionId?: string | null;
               characterId?: string | null;
+              localHour?: number | null;
             };
             messages = body.messages;
             characterId =
@@ -441,10 +511,15 @@ export const Route = createFileRoute("/api/chat")({
               typeof body.scenarioSessionId === "string" && body.scenarioSessionId.length > 0
                 ? body.scenarioSessionId
                 : null;
+            localHour =
+              typeof body.localHour === "number" && body.localHour >= 0 && body.localHour <= 23
+                ? Math.floor(body.localHour)
+                : null;
           } catch {
             return new Response("Bad request", { status: 400 });
           }
           if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
+
 
 
           const key = process.env.LOVABLE_API_KEY;
@@ -483,6 +558,12 @@ export const Route = createFileRoute("/api/chat")({
           const character = (charRes as { data: Character | null }).data;
           if (!character) return new Response("No character", { status: 400 });
 
+          const bondSettings = normalizeSettings(character.settings);
+          const hoursAway = character.last_active_at
+            ? Math.max(0, (Date.now() - new Date(character.last_active_at).getTime()) / 3_600_000)
+            : 0;
+          const sceneCtx: SceneContext = { settings: bondSettings, hoursAway, localHour };
+
           void safe(
             "touch bond",
             supabase
@@ -497,6 +578,7 @@ export const Route = createFileRoute("/api/chat")({
             1,
             Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
           );
+
 
           // ---- Scenario mode: the session must belong to this user (never trust the client) ----
           if (scenarioSessionId) {
@@ -686,7 +768,9 @@ export const Route = createFileRoute("/api/chat")({
                 summaries,
                 signals,
                 recentPhrases,
+                sceneCtx,
               ) + explicitMemoryNote,
+
             messages: await convertToModelMessages(recent),
             temperature: 0.95,
             onError: ({ error }) => {
@@ -700,7 +784,8 @@ export const Route = createFileRoute("/api/chat")({
             onFinish: async ({ responseMessage }) => {
               const raw = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
               if (!raw.trim()) return;
-              const { text, expression } = parseExpression(raw);
+              const { text: withoutExpr, expression } = parseExpression(raw);
+              const { text, scene: newScene } = parseScene(withoutExpr);
               if (!text.trim()) return;
 
               await safe(
@@ -732,8 +817,17 @@ export const Route = createFileRoute("/api/chat")({
                       100,
                       (character.trust ?? 0) + (lastUserText.trim().length > 60 ? 1 : 0),
                     ),
+                    ...(newScene && newScene !== bondSettings.scene
+                      ? {
+                          settings: {
+                            ...bondSettings,
+                            scene: newScene,
+                          } as unknown as Record<string, boolean>,
+                        }
+                      : {}),
                   })
                   .eq("id", character.id)
+
                   .eq("user_id", userId),
                 null as never,
               );

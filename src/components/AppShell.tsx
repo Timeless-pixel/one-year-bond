@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Home, MessageCircle, Sparkles, LogOut, Brain, BookHeart, Clapperboard, Library, Gift } from "lucide-react";
+import { Home, MessageCircle, Sparkles, LogOut, Brain, BookHeart, Clapperboard, Library, Gift, SlidersHorizontal } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { BondSwitcher } from "@/components/BondSwitcher";
@@ -14,11 +14,13 @@ const nav = [
   { to: "/keepsakes", label: "Keepsakes", icon: Gift },
   { to: "/character", label: "Character", icon: Sparkles },
   { to: "/bonds", label: "Bonds", icon: Library },
+  { to: "/settings", label: "Settings", icon: SlidersHorizontal },
 ] as const;
 
 const mobileNav = nav.filter((n) =>
   ["/home", "/chat", "/scenarios", "/story", "/bonds"].includes(n.to),
 );
+
 
 
 

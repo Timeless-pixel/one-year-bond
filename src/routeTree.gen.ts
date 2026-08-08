@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiGeneratePortraitRouteImport } from './routes/api/generate-portrait'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedStoryRouteImport } from './routes/_authenticated/story'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedScenariosRouteImport } from './routes/_authenticated/scenarios'
 import { Route as AuthenticatedMemoriesRouteImport } from './routes/_authenticated/memories'
 import { Route as AuthenticatedKeepsakesRouteImport } from './routes/_authenticated/keepsakes'
@@ -52,6 +53,11 @@ const ApiChatRoute = ApiChatRouteImport.update({
 const AuthenticatedStoryRoute = AuthenticatedStoryRouteImport.update({
   id: '/story',
   path: '/story',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedScenariosRoute = AuthenticatedScenariosRouteImport.update({
@@ -112,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/memories': typeof AuthenticatedMemoriesRoute
   '/scenarios': typeof AuthenticatedScenariosRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   '/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/memories': typeof AuthenticatedMemoriesRoute
   '/scenarios': typeof AuthenticatedScenariosRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   '/_authenticated/keepsakes': typeof AuthenticatedKeepsakesRoute
   '/_authenticated/memories': typeof AuthenticatedMemoriesRoute
   '/_authenticated/scenarios': typeof AuthenticatedScenariosRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/story': typeof AuthenticatedStoryRoute
   '/api/chat': typeof ApiChatRoute
   '/api/generate-portrait': typeof ApiGeneratePortraitRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/keepsakes'
     | '/memories'
     | '/scenarios'
+    | '/settings'
     | '/story'
     | '/api/chat'
     | '/api/generate-portrait'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/keepsakes'
     | '/memories'
     | '/scenarios'
+    | '/settings'
     | '/story'
     | '/api/chat'
     | '/api/generate-portrait'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/_authenticated/keepsakes'
     | '/_authenticated/memories'
     | '/_authenticated/scenarios'
+    | '/_authenticated/settings'
     | '/_authenticated/story'
     | '/api/chat'
     | '/api/generate-portrait'
@@ -253,6 +265,13 @@ declare module '@tanstack/react-router' {
       path: '/story'
       fullPath: '/story'
       preLoaderRoute: typeof AuthenticatedStoryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/scenarios': {
@@ -330,6 +349,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedKeepsakesRoute: typeof AuthenticatedKeepsakesRoute
   AuthenticatedMemoriesRoute: typeof AuthenticatedMemoriesRoute
   AuthenticatedScenariosRoute: typeof AuthenticatedScenariosRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedStoryRoute: typeof AuthenticatedStoryRoute
   AuthenticatedScenarioSessionIdRoute: typeof AuthenticatedScenarioSessionIdRoute
 }
@@ -343,6 +363,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedKeepsakesRoute: AuthenticatedKeepsakesRoute,
   AuthenticatedMemoriesRoute: AuthenticatedMemoriesRoute,
   AuthenticatedScenariosRoute: AuthenticatedScenariosRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedStoryRoute: AuthenticatedStoryRoute,
   AuthenticatedScenarioSessionIdRoute: AuthenticatedScenarioSessionIdRoute,
 }

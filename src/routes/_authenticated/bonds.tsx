@@ -7,6 +7,8 @@ import { Plus, Archive, RotateCcw } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { listBonds, archiveBond, restoreBond } from "@/lib/bond.functions";
 import { computeDay, daysAgo, type BondSummary } from "@/lib/bond-shared";
+import { journeyLabel } from "@/lib/scene-shared";
+
 import { useActiveBondId } from "@/hooks/useActiveBond";
 
 export const Route = createFileRoute("/_authenticated/bonds")({
@@ -81,8 +83,9 @@ function BondsPage() {
               <div className="p-5">
                 <div className="text-xl">{b.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  Day {computeDay(b.journey_start_date)}/365 · {b.relationship_stage ?? b.relationship_type}
+                  {journeyLabel(computeDay(b.journey_start_date))} · {b.relationship_stage ?? b.relationship_type}
                 </div>
+
                 <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
                   <span className="rounded-full border border-border px-2 py-0.5">{b.message_count} messages</span>
                   <span className="rounded-full border border-border px-2 py-0.5">{b.memory_count} memories</span>

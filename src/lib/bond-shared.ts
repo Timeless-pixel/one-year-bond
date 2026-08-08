@@ -55,8 +55,9 @@ export interface Letter {
 export function computeDay(startDate: string) {
   const day =
     Math.floor((Date.now() - new Date(startDate).getTime()) / 86_400_000) + 1;
-  return Math.max(1, Math.min(365, day));
+  return Math.max(1, day);
 }
+
 
 export function daysAgo(iso: string) {
   const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);

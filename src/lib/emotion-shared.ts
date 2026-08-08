@@ -305,11 +305,24 @@ export function currentAtmosphere(now: Date = new Date()): Atmosphere {
 
 // -------------------- Per-bond experience settings --------------------
 
+export type ActionIntensity = "subtle" | "balanced" | "vivid";
+
 export interface BondSettings {
   initiations: boolean;
   dreams: boolean;
   backgrounds: boolean;
   expressions: boolean;
+  /** Physical actions / body language woven into replies. */
+  actions: boolean;
+  actionIntensity: ActionIntensity;
+  /** Contextual quick-interaction buttons under the composer. */
+  quickButtons: boolean;
+  /** Motion: breathing portrait, typing bounce, fade-ins. */
+  animations: boolean;
+  /** Pauses living moments and character-initiated messages. */
+  paused: boolean;
+  /** Where the two of you currently are, e.g. "a quiet café, raining". */
+  scene: string | null;
 }
 
 export const DEFAULT_BOND_SETTINGS: BondSettings = {
@@ -317,17 +330,32 @@ export const DEFAULT_BOND_SETTINGS: BondSettings = {
   dreams: true,
   backgrounds: true,
   expressions: true,
+  actions: true,
+  actionIntensity: "balanced",
+  quickButtons: true,
+  animations: true,
+  paused: false,
+  scene: null,
 };
 
 export function normalizeSettings(raw: unknown): BondSettings {
   const s = (raw ?? {}) as Partial<BondSettings>;
+  const intensity: ActionIntensity =
+    s.actionIntensity === "subtle" || s.actionIntensity === "vivid" ? s.actionIntensity : "balanced";
   return {
     initiations: s.initiations !== false,
     dreams: s.dreams !== false,
     backgrounds: s.backgrounds !== false,
     expressions: s.expressions !== false,
+    actions: s.actions !== false,
+    actionIntensity: intensity,
+    quickButtons: s.quickButtons !== false,
+    animations: s.animations !== false,
+    paused: s.paused === true,
+    scene: typeof s.scene === "string" && s.scene.trim() ? s.scene.trim().slice(0, 120) : null,
   };
 }
+
 
 // -------------------- Character growth --------------------
 
