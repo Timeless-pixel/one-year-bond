@@ -20,12 +20,12 @@ export const Route = createFileRoute("/_authenticated/home")({
   }),
 });
 
+import { daysTogether, journeyLabel, nextMilestone } from "@/lib/scene-shared";
+
 function computeDay(startDate: string) {
-  const day = Math.floor(
-    (Date.now() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24),
-  ) + 1;
-  return Math.max(1, Math.min(365, day));
+  return daysTogether(startDate);
 }
+
 
 function HomePage() {
   const [characterId] = useActiveBondId();
