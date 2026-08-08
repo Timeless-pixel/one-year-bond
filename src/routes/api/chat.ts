@@ -9,7 +9,11 @@ import {
   loveLanguageGuidance,
   growthGuidance,
   parseExpression,
+  normalizeSettings,
+  type BondSettings,
 } from "@/lib/emotion-shared";
+import { parseScene } from "@/lib/scene-shared";
+
 
 interface Character {
   id: string;
