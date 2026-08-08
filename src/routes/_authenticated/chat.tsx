@@ -5,11 +5,13 @@ import { useActiveBondId } from "@/hooks/useActiveBond";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyCharacter, getMessages } from "@/lib/character.functions";
+import { getBondExperience } from "@/lib/bond.functions";
 import { AppShell } from "@/components/AppShell";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Send } from "lucide-react";
-import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, type Expression } from "@/lib/emotion-shared";
+import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, isRomanticBond, DEFAULT_BOND_SETTINGS, type BondSettings, type Expression } from "@/lib/emotion-shared";
+import { parseScene, splitActions, quickInteractions, daysTogether, journeyLabel } from "@/lib/scene-shared";
 
 export const Route = createFileRoute("/_authenticated/chat")({
   component: ChatPage,
@@ -63,6 +65,8 @@ interface CharacterRow {
   avatar_url: string | null;
   mood: string | null;
   relationship_stage: string | null;
+  relationship_type?: string | null;
+  journey_start_date?: string | null;
   expression?: string | null;
 }
 
@@ -80,6 +84,13 @@ async function getAccessToken(): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/** Strips the control tags and returns spoken text + physical actions. */
+function renderable(raw: string) {
+  const { text: noExpr } = parseExpression(raw);
+  const { text, scene } = parseScene(noExpr);
+  return { segments: splitActions(text), scene };
 }
 
 function ChatWindow({
@@ -104,11 +115,18 @@ function ChatWindow({
   const [activeBondId] = useActiveBondId();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const fetchExperience = useServerFn(getBondExperience);
+  const { data: experience } = useQuery({
+    queryKey: ["bond-experience", activeBondId ?? character.id],
+    queryFn: () => fetchExperience({ data: { characterId: activeBondId } }),
+  });
+  const settings: BondSettings = experience?.settings ?? DEFAULT_BOND_SETTINGS;
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
-        body: { characterId: activeBondId ?? null },
+        body: { characterId: activeBondId ?? null, localHour: new Date().getHours() },
         fetch: async (input, init) => {
           const token = await getAccessToken();
           const headers = new Headers(init?.headers);
@@ -158,8 +176,11 @@ function ChatWindow({
   const sendingRef = useRef(false);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, status, errorMsg]);
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: settings.animations ? "smooth" : "auto",
+    });
+  }, [messages, status, errorMsg, settings.animations]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -207,11 +228,25 @@ function ChatWindow({
   }, [messages.length]);
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const lastAssistantRaw =
+    lastAssistant?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
   const liveExpression =
-    parseExpression(
-      lastAssistant?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "",
-    ).expression ??
+    parseExpression(lastAssistantRaw).expression ??
     ((character.expression as Expression | null) ?? "neutral");
+  const liveScene = renderable(lastAssistantRaw).scene ?? settings.scene;
+  const glow = settings.expressions ? EXPRESSION_GLOW[liveExpression] : "transparent";
+
+  const quick = useMemo(
+    () =>
+      quickInteractions({
+        stageIndex: experience?.level?.index ?? 0,
+        romantic: isRomanticBond(character.relationship_type ?? ""),
+        expression: liveExpression,
+      }),
+    [experience?.level?.index, character.relationship_type, liveExpression],
+  );
+
+  const days = character.journey_start_date ? daysTogether(character.journey_start_date) : null;
 
   return (
     <div className="mx-auto flex h-[100dvh] max-w-3xl flex-col px-4 pt-4 md:pt-6">
@@ -222,8 +257,9 @@ function ChatWindow({
             background: character.avatar_url
               ? `center/cover url(${character.avatar_url})`
               : "var(--gradient-primary)",
-            boxShadow: `0 0 0 2px ${EXPRESSION_GLOW[liveExpression] ?? "transparent"}, 0 0 22px -4px ${EXPRESSION_GLOW[liveExpression] ?? "transparent"}`,
-            transition: "box-shadow 700ms ease",
+            boxShadow: `0 0 0 2px ${glow ?? "transparent"}, 0 0 22px -4px ${glow ?? "transparent"}`,
+            transition: settings.animations ? "box-shadow 700ms ease, transform 3s ease-in-out" : "none",
+            animation: settings.animations ? "breathe 6s ease-in-out infinite" : undefined,
           }}
         >
           {!character.avatar_url && (
@@ -235,13 +271,24 @@ function ChatWindow({
         <div className="flex-1">
           <div className="flex items-center gap-2 text-sm font-medium">
             {character.name}
-            <span className="h-1.5 w-1.5 rounded-full bg-green-400" style={{ animation: "aurora-pulse 2s infinite" }} />
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-green-400"
+              style={settings.animations ? { animation: "aurora-pulse 2s infinite" } : undefined}
+            />
           </div>
           <div className="text-xs text-muted-foreground">
-            {character.relationship_stage} · {EXPRESSION_EMOJI[liveExpression] ?? "🙂"} {liveExpression}
+            {character.relationship_stage}
+            {settings.expressions && ` · ${EXPRESSION_EMOJI[liveExpression] ?? "🙂"} ${liveExpression}`}
+            {days ? ` · ${journeyLabel(days)}` : ""}
           </div>
         </div>
       </header>
+
+      {liveScene && (
+        <div className="mb-3 text-center text-[11px] uppercase tracking-widest text-muted-foreground">
+          {liveScene}
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-1 pb-4">
         {messages
@@ -250,23 +297,46 @@ function ChatWindow({
             return !(m.role === "user" && t.startsWith("(system:"));
           })
           .map((m: UIMessage) => {
-            const text = parseExpression(
-              m.parts.map((p) => (p.type === "text" ? p.text : "")).join(""),
-            ).text;
+            const raw = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+            const { segments } = renderable(raw);
             const mine = m.role === "user";
             return (
-              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div
+                key={m.id}
+                className={`flex ${mine ? "justify-end" : "justify-start"} ${settings.animations ? "animate-fade-in" : ""}`}
+              >
                 {mine ? (
                   <div
                     className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm"
                     style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)" }}
                   >
-                    {text}
+                    {segments.map((s, i) =>
+                      s.type === "action" ? (
+                        <span key={i} className="mr-1 italic opacity-80">
+                          *{s.value}*
+                        </span>
+                      ) : (
+                        <span key={i}>{s.value} </span>
+                      ),
+                    )}
                   </div>
                 ) : (
                   <div className="max-w-[85%] text-sm leading-relaxed text-foreground">
                     <div className="mb-1 text-xs text-muted-foreground">{character.name}</div>
-                    <div>{text}</div>
+                    <div className="space-y-1">
+                      {segments.map((s, i) =>
+                        s.type === "action" ? (
+                          <div
+                            key={i}
+                            className="border-l-2 border-primary/40 pl-3 text-[13px] italic text-muted-foreground"
+                          >
+                            {s.value}
+                          </div>
+                        ) : (
+                          <div key={i}>{s.value}</div>
+                        ),
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -280,7 +350,11 @@ function ChatWindow({
                 <span
                   key={d}
                   className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground"
-                  style={{ animation: "typing-bounce 1.2s infinite", animationDelay: `${d}ms` }}
+                  style={
+                    settings.animations
+                      ? { animation: "typing-bounce 1.2s infinite", animationDelay: `${d}ms` }
+                      : undefined
+                  }
                 />
               ))}
             </span>
@@ -300,6 +374,21 @@ function ChatWindow({
         )}
       </div>
 
+      {settings.quickButtons && (
+        <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+          {quick.map((q) => (
+            <button
+              key={q.label}
+              onClick={() => void send(q.send)}
+              disabled={isBusy}
+              className="shrink-0 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:text-foreground disabled:opacity-40"
+            >
+              {q.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="glass sticky bottom-24 mb-4 flex items-end gap-2 rounded-2xl p-2 md:bottom-4">
         <textarea
           ref={inputRef}
@@ -311,7 +400,7 @@ function ChatWindow({
               submit();
             }
           }}
-          placeholder={`Message ${character.name}…`}
+          placeholder={`Message ${character.name}… (*actions in asterisks*)`}
           rows={1}
           className="flex-1 resize-none bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground"
           style={{ maxHeight: "160px" }}
