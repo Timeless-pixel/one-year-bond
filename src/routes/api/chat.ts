@@ -768,7 +768,9 @@ export const Route = createFileRoute("/api/chat")({
                 summaries,
                 signals,
                 recentPhrases,
+                sceneCtx,
               ) + explicitMemoryNote,
+
             messages: await convertToModelMessages(recent),
             temperature: 0.95,
             onError: ({ error }) => {
