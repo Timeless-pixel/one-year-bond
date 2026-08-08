@@ -215,6 +215,8 @@ export const refreshLivingMoments = createServerFn({ method: "POST" })
       : c;
     if (!character || character.status !== "active") return { created: 0 };
     if (character.living_moments_enabled === false) return { created: 0 };
+    if (normalizeSettings(character.settings).paused) return { created: 0 };
+
 
     const { data: last } = await context.supabase
       .from("living_moments")
