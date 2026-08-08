@@ -784,7 +784,8 @@ export const Route = createFileRoute("/api/chat")({
             onFinish: async ({ responseMessage }) => {
               const raw = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
               if (!raw.trim()) return;
-              const { text, expression } = parseExpression(raw);
+              const { text: withoutExpr, expression } = parseExpression(raw);
+              const { text, scene: newScene } = parseScene(withoutExpr);
               if (!text.trim()) return;
 
               await safe(
@@ -816,8 +817,17 @@ export const Route = createFileRoute("/api/chat")({
                       100,
                       (character.trust ?? 0) + (lastUserText.trim().length > 60 ? 1 : 0),
                     ),
+                    ...(newScene && newScene !== bondSettings.scene
+                      ? {
+                          settings: {
+                            ...bondSettings,
+                            scene: newScene,
+                          } as unknown as Record<string, boolean>,
+                        }
+                      : {}),
                   })
                   .eq("id", character.id)
+
                   .eq("user_id", userId),
                 null as never,
               );
