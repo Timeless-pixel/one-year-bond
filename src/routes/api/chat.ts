@@ -40,8 +40,11 @@ interface Character {
   trust?: number | null;
   daily_events_enabled?: boolean | null;
   surprises_enabled?: boolean | null;
+  settings?: unknown;
+  last_active_at?: string | null;
   active_scenario?: ActiveScenario | null;
 }
+
 
 interface ActiveScenario {
   id: string;
