@@ -7,6 +7,8 @@ import { Plus, Archive, RotateCcw } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { listBonds, archiveBond, restoreBond } from "@/lib/bond.functions";
 import { computeDay, daysAgo, type BondSummary } from "@/lib/bond-shared";
+import { journeyLabel } from "@/lib/scene-shared";
+
 import { useActiveBondId } from "@/hooks/useActiveBond";
 
 export const Route = createFileRoute("/_authenticated/bonds")({
