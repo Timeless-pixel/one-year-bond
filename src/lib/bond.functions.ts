@@ -575,6 +575,12 @@ export const updateBondSettings = createServerFn({ method: "POST" })
         dreams: z.boolean().optional(),
         backgrounds: z.boolean().optional(),
         expressions: z.boolean().optional(),
+        actions: z.boolean().optional(),
+        actionIntensity: z.enum(["subtle", "balanced", "vivid"]).optional(),
+        quickButtons: z.boolean().optional(),
+        animations: z.boolean().optional(),
+        paused: z.boolean().optional(),
+        scene: z.string().max(120).nullable().optional(),
       })
       .parse(i),
   )
@@ -590,20 +596,23 @@ export const updateBondSettings = createServerFn({ method: "POST" })
       .eq("user_id", context.userId)
       .maybeSingle();
     const current = normalizeSettings(row?.settings);
-    const next: BondSettings = {
-      initiations: data.initiations ?? current.initiations,
-      dreams: data.dreams ?? current.dreams,
-      backgrounds: data.backgrounds ?? current.backgrounds,
-      expressions: data.expressions ?? current.expressions,
-    };
+    const next: BondSettings = normalizeSettings({
+      ...current,
+      ...Object.fromEntries(Object.entries(data).filter(([k, v]) => k !== "characterId" && v !== undefined)),
+      scene: data.scene !== undefined ? data.scene : current.scene,
+    });
     const { error } = await context.supabase
       .from("characters")
-      .update({ settings: next as unknown as Record<string, boolean>, living_moments_enabled: next.initiations || next.dreams })
+      .update({
+        settings: next as unknown as Record<string, unknown>,
+        living_moments_enabled: !next.paused && (next.initiations || next.dreams),
+      })
       .eq("id", c.id)
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
     return next;
   });
+
 
 export const updateLoveLanguage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
