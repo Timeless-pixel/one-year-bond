@@ -77,8 +77,8 @@ function HomePage() {
     : expressionFromMood(character.mood);
   const score = Math.max(0, Math.min(100, Number(character.relationship_score ?? 0)));
   const day = computeDay(character.journey_start_date);
-  const daysLeft = 365 - day;
-  const pct = (day / 365) * 100;
+  const next = nextMilestone(day);
+
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
