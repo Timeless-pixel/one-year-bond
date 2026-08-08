@@ -604,7 +604,7 @@ export const updateBondSettings = createServerFn({ method: "POST" })
     const { error } = await context.supabase
       .from("characters")
       .update({
-        settings: next as unknown as Record<string, unknown>,
+        settings: next as unknown as Record<string, boolean>,
         living_moments_enabled: !next.paused && (next.initiations || next.dreams),
       })
       .eq("id", c.id)
