@@ -555,6 +555,12 @@ export const Route = createFileRoute("/api/chat")({
           const character = (charRes as { data: Character | null }).data;
           if (!character) return new Response("No character", { status: 400 });
 
+          const bondSettings = normalizeSettings(character.settings);
+          const hoursAway = character.last_active_at
+            ? Math.max(0, (Date.now() - new Date(character.last_active_at).getTime()) / 3_600_000)
+            : 0;
+          const sceneCtx: SceneContext = { settings: bondSettings, hoursAway, localHour };
+
           void safe(
             "touch bond",
             supabase
@@ -569,6 +575,7 @@ export const Route = createFileRoute("/api/chat")({
             1,
             Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
           );
+
 
           // ---- Scenario mode: the session must belong to this user (never trust the client) ----
           if (scenarioSessionId) {
