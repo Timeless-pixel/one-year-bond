@@ -154,21 +154,17 @@ function HomePage() {
               <div className="text-xs uppercase tracking-widest text-muted-foreground">
                 Your journey
               </div>
-              <div className="mt-2 flex items-baseline gap-3">
-                <div className="text-6xl">{day}</div>
-                <div className="text-lg text-muted-foreground">/ 365</div>
-              </div>
-              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${pct}%`, background: "var(--gradient-primary)" }}
-                />
-              </div>
+              <div className="mt-2 text-4xl">{journeyLabel(day)}</div>
               <div className="mt-3 flex justify-between text-xs text-muted-foreground">
-                <span>Started {new Date(character.journey_start_date).toLocaleDateString()}</span>
-                <span>{daysLeft} days remaining</span>
+                <span>Since {new Date(character.journey_start_date).toLocaleDateString()}</span>
+                {next && (
+                  <span>
+                    Day {next.day} in {next.away} day{next.away === 1 ? "" : "s"}
+                  </span>
+                )}
               </div>
             </div>
+
 
             <div className="glass rounded-3xl p-7">
               <div className="text-xs uppercase tracking-widest text-muted-foreground">
