@@ -142,11 +142,20 @@ function ChatWindow({
             const res = await fetch(input, { ...init, headers, signal: controller.signal });
             if (!res.ok) {
               const detail = await res.text().catch(() => "");
+              let code = decodeChatError(detail);
+              if (!code) {
+                try {
+                  code = (JSON.parse(detail) as { error?: ChatErrorCode }).error ?? null;
+                } catch {
+                  code = null;
+                }
+              }
               throw new Error(
-                res.status === 401
-                  ? "Your session expired. Please sign in again."
-                  : detail || "Something went wrong while trying to respond. Please try again.",
+                encodeChatError(
+                  code ?? (res.status === 401 ? "unauthorized" : res.status === 429 ? "rate_limit" : "server"),
+                ),
               );
+
             }
             return res;
           } finally {
