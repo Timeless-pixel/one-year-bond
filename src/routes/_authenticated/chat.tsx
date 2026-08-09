@@ -123,6 +123,8 @@ function ChatWindow({
 
   const [activeBondId] = useActiveBondId();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<ChatErrorCode | null>(null);
+
 
   const fetchExperience = useServerFn(getBondExperience);
   const { data: experience } = useQuery({
