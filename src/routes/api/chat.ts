@@ -548,8 +548,11 @@ async function safe<T>(label: string, p: PromiseLike<T>, fallback: T, ms = 5000)
 }
 
 const MAX_MEMORIES = 20;
+const MEMORY_CANDIDATES = 120;
+const MAX_PEOPLE = 8;
 const MAX_SUMMARIES = 3;
 const MAX_TURNS = 24;
+
 
 export const Route = createFileRoute("/api/chat")({
   server: {
