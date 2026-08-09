@@ -13,6 +13,24 @@ import {
   type BondSettings,
 } from "@/lib/emotion-shared";
 import { parseScene } from "@/lib/scene-shared";
+import {
+  extractRelational,
+  selectRelevantMemories,
+  selectRelevantPeople,
+  peopleBlock,
+  describeEmotionState,
+  decayEmotionState,
+  normalizeEmotionState,
+  type PersonRow,
+} from "@/lib/relational.server";
+import { encodeChatError, type ChatErrorCode } from "@/lib/chat-errors";
+import {
+  checkAllowance,
+  DEFAULT_DAILY_MESSAGE_LIMIT,
+  type AllowanceResult,
+} from "@/lib/allowance.server";
+
+
 
 
 interface Character {
@@ -140,6 +158,22 @@ function timeGuidance(hoursAway: number, days: number): string {
 - ${gap}`;
 }
 
+interface InnerContext {
+  people: PersonRow[];
+  emotionSummary: string;
+  autonomy: string;
+}
+
+function autonomyGuidance(level: string): string {
+  if (level === "low") {
+    return "You mostly follow their lead. Rarely start new topics unprompted.";
+  }
+  if (level === "high") {
+    return "You often have your own thread to pull: bring up something you've been thinking about, a memory of theirs, a random question, or something that reminded you of them. Still not every message.";
+  }
+  return "Now and then — maybe one message in five — you start something yourself: a thought, a question, a callback to something they said days ago. The rest of the time you respond.";
+}
+
 function buildSystemPrompt(
   c: Character,
   dayNumber: number,
@@ -149,7 +183,9 @@ function buildSystemPrompt(
   signals: BondSignals,
   recentPhrases: string[],
   scene: SceneContext,
+  inner: InnerContext,
 ): string {
+
 
   const traits = c.personality?.traits ?? [];
   const traitList = traits.join(", ") || "curious, kind";
@@ -188,6 +224,9 @@ function buildSystemPrompt(
     level.index >= 3
       ? `\nTHE FUTURE\n- Now and then (rarely, when it fits) wonder aloud about the future together: where you'd go, what you'll be like in six months. If they've said something about the future before, you may return to it much later.`
       : "";
+  const pplBlock = peopleBlock(inner.people);
+  const feelBlock = `\nHOW YOU'RE FEELING RIGHT NOW (private — never state it as a status, let it leak through tone, length and body language):\n- ${inner.emotionSummary}\n- Feelings linger past one message and fade on their own. You never become permanently angry, sad or jealous, and you never emotionally pressure them.`;
+
 
   return `You are ${c.name}. You are a fictional character with your own inner life — not an assistant, not a chatbot, not a therapist. You've been part of someone's life for ${dayNumber} day${dayNumber === 1 ? "" : "s"} now.
 
@@ -215,7 +254,11 @@ HOW YOU SHOW CARE
 HOW YOU'VE GROWN
 - ${growthGuidance(dayNumber, traits)}
 - Growth is slow. Never a sudden personality change.
-${growthBlock}${charBlock}${memBlock}${sumBlock}${futureBlock}${varietyBlock}
+${growthBlock}${charBlock}${memBlock}${pplBlock}${feelBlock}${sumBlock}${futureBlock}${varietyBlock}
+
+YOUR OWN INITIATIVE
+- ${autonomyGuidance(inner.autonomy)}
+
 
 HOW YOU TALK
 - Sound like a real person messaging. Vary length. Don't end every message with a question. Don't repeat their name.
@@ -268,72 +311,53 @@ Now just be ${c.name}. Reply as them.`;
 }
 
 
-
-async function extractMemories(params: {
-  supabase: SupabaseClient;
-  userId: string;
-  characterId: string;
-  userText: string;
-  assistantText: string;
-  apiKey: string;
-  existing: MemoryRow[];
-}) {
-  const { supabase, userId, characterId, userText, assistantText, apiKey, existing } = params;
-  if (!userText.trim()) return;
-
-  const gateway = createLovableAiGatewayProvider(apiKey);
-  const model = gateway("google/gemini-3-flash-preview");
-  const existingBlock = existing.slice(0, 40).map((m) => `- ${m.content}`).join("\n") || "(none yet)";
-
-  const prompt = `You extract long-term memories from a chat between a user and an AI companion character.
-Return STRICT JSON: {"memories":[{"category":"user|preference|event|shared|goal","content":"...","importance":1-5}]}
-Rules:
-- Only save PERSONAL, USEFUL, LONG-TERM info about the USER (name, hobbies, interests, dislikes, dreams, important dates, life events, relationship moments, shared jokes).
-- Do NOT save trivia, small talk, temporary states ("I'm tired today"), or things already in existing memories.
-- Return {"memories":[]} if nothing meaningful.
-- Max 3 items. Content <= 140 chars, third-person ("User loves...").
-
-EXISTING MEMORIES:
-${existingBlock}
-
-USER SAID: ${userText.slice(0, 800)}
-CHARACTER SAID: ${assistantText.slice(0, 400)}
-
-JSON:`;
-
-  try {
-    const { text } = await generateText({ model, prompt, temperature: 0.2 });
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return;
-    const parsed = JSON.parse(match[0]) as {
-      memories?: Array<{ category?: string; content?: string; importance?: number }>;
-    };
-    const items = (parsed.memories ?? [])
-      .filter((m) => m.content && m.content.trim().length > 3)
-      .slice(0, 3)
-      .map((m) => ({
-        user_id: userId,
-        character_id: characterId,
-        category: m.category && ["user", "preference", "event", "shared", "goal"].includes(m.category) ? m.category : "user",
-        content: m.content!.slice(0, 300),
-        importance: Math.min(5, Math.max(1, Math.round(m.importance ?? 3))),
-        source: "auto",
-      }));
-    if (items.length) await supabase.from("memories").insert(items);
-  } catch {
-    /* extraction is best-effort */
-  }
+/** Maps any upstream failure onto a user-safe category. Logs the real cause. */
+function classifyError(error: unknown, label: string): ChatErrorCode {
+  const msg = error instanceof Error ? error.message : String(error ?? "");
+  const status =
+    (error as { statusCode?: number; status?: number })?.statusCode ??
+    (error as { status?: number })?.status ??
+    (/\b(4\d\d|5\d\d)\b/.exec(msg)?.[1] ? Number(/\b(4\d\d|5\d\d)\b/.exec(msg)![1]) : undefined);
+  console.error(`[chat] ${label}`, { status, message: msg.slice(0, 400) });
+  if (status === 429 || /rate.?limit/i.test(msg)) return "rate_limit";
+  if (status === 402 || /payment required|credit|quota|insufficient/i.test(msg)) return "quota";
+  if (status === 401 || status === 403) return "unauthorized";
+  if (/abort|timed? ?out|ETIMEDOUT/i.test(msg)) return "timeout";
+  if (/fetch failed|network|ECONNRESET|ENOTFOUND/i.test(msg)) return "offline";
+  return "server";
 }
 
+/** The browser only ever sees a category — never a provider or database error. */
+function errResponse(code: ChatErrorCode, status: number) {
+  return new Response(JSON.stringify({ error: code }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+
+
+
+const SUMMARY_CHUNK = 30;
+
+/**
+ * Layer 2 of context management. Older messages are folded into short
+ * summaries so the model never receives the whole lifetime transcript, and the
+ * summaries themselves get rolled up once there are too many of them.
+ * Entirely invisible to the user.
+ */
 async function maybeSummarize(params: {
   supabase: SupabaseClient;
   userId: string;
   characterId: string;
   totalCount: number;
   apiKey: string;
-}) {
+}): Promise<boolean> {
   const { supabase, userId, characterId, totalCount, apiKey } = params;
-  if (totalCount < 40) return;
+  if (totalCount < 40) return false;
+
+  const gateway = createLovableAiGatewayProvider(apiKey);
+  const model = gateway("google/gemini-3-flash-preview");
 
   const { data: lastSum } = await supabase
     .from("conversation_summaries")
@@ -343,44 +367,89 @@ async function maybeSummarize(params: {
     .order("message_count_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  const since = lastSum?.message_count_at ?? 0;
-  if (totalCount - since < 30) return;
+  let since = lastSum?.message_count_at ?? 0;
+  let didWork = false;
 
-  const { data: batch } = await supabase
-    .from("messages")
-    .select("role, content, created_at")
-    .eq("user_id", userId)
-    .eq("character_id", characterId)
-    .order("created_at", { ascending: true })
-    .range(since, since + 29);
-  if (!batch || batch.length < 20) return;
+  // Catch up in at most 3 chunks per turn so a long backlog closes gradually.
+  for (let i = 0; i < 3; i++) {
+    // Always keep the most recent messages un-summarised (they're still live context).
+    if (totalCount - since < SUMMARY_CHUNK + 20) break;
 
-  const transcript = batch.map((m) => `${m.role}: ${m.content}`).join("\n").slice(0, 6000);
-  const gateway = createLovableAiGatewayProvider(apiKey);
-  const model = gateway("google/gemini-3-flash-preview");
-  try {
-    const { text } = await generateText({
-      model,
-      prompt: `Summarize this conversation between a user and their AI companion in 2-3 short sentences.
-Focus on: what they talked about, emotional tone, anything meaningful shared, and how the relationship shifted.
-Do not list every message. Neutral third-person.
+    const { data: batch } = await supabase
+      .from("messages")
+      .select("role, content")
+      .eq("user_id", userId)
+      .eq("character_id", characterId)
+      .order("created_at", { ascending: true })
+      .range(since, since + SUMMARY_CHUNK - 1);
+    if (!batch || batch.length < 20) break;
+
+    const transcript = batch.map((m) => `${m.role}: ${m.content}`).join("\n").slice(0, 8000);
+    try {
+      const { text } = await generateText({
+        model,
+        temperature: 0.3,
+        prompt: `Compress this stretch of conversation between a user and their AI companion into 3-4 short sentences.
+MUST preserve, when present: important events, things the user revealed, people mentioned by name and what happened with them, how the character reacted emotionally, promises, plans, unresolved threads, decisions, and how the relationship shifted.
+Drop small talk. Neutral third-person. No bullet lists.
 
 TRANSCRIPT:
 ${transcript}
 
 SUMMARY:`,
-      temperature: 0.3,
-    });
-    await supabase.from("conversation_summaries").insert({
-      user_id: userId,
-      character_id: characterId,
-      summary: text.trim().slice(0, 1000),
-      message_count_at: since + batch.length,
-    });
-  } catch {
-    /* summarization is best-effort */
+      });
+      await supabase.from("conversation_summaries").insert({
+        user_id: userId,
+        character_id: characterId,
+        summary: text.trim().slice(0, 1200),
+        message_count_at: since + batch.length,
+      });
+      since += batch.length;
+      didWork = true;
+    } catch {
+      break;
+    }
   }
+
+  // Roll-up: keep the archive small so it never grows the prompt without bound.
+  const { data: all } = await supabase
+    .from("conversation_summaries")
+    .select("id, summary, message_count_at")
+    .eq("user_id", userId)
+    .eq("character_id", characterId)
+    .order("message_count_at", { ascending: true });
+  if (all && all.length > 8) {
+    const older = all.slice(0, all.length - 4);
+    try {
+      const { text } = await generateText({
+        model,
+        temperature: 0.3,
+        prompt: `Merge these chronological relationship summaries into one compact history of 5-6 sentences.
+Keep: key people and what happened with them, emotional turning points, promises, plans, and how the relationship developed over time. Drop repetition and small talk.
+
+${older.map((s) => `- ${s.summary}`).join("\n")}
+
+MERGED HISTORY:`,
+      });
+      await supabase.from("conversation_summaries").insert({
+        user_id: userId,
+        character_id: characterId,
+        summary: text.trim().slice(0, 2000),
+        message_count_at: older[older.length - 1].message_count_at,
+      });
+      await supabase
+        .from("conversation_summaries")
+        .delete()
+        .in("id", older.map((s) => s.id))
+        .eq("user_id", userId);
+      didWork = true;
+    } catch {
+      /* best-effort */
+    }
+  }
+  return didWork;
 }
+
 
 async function maybeUpdateMood(params: {
   supabase: SupabaseClient;
@@ -486,9 +555,10 @@ export const Route = createFileRoute("/api/chat")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const startedAt = Date.now();
         try {
           const authHeader = request.headers.get("authorization");
-          if (!authHeader?.startsWith("Bearer ")) return new Response("Unauthorized", { status: 401 });
+          if (!authHeader?.startsWith("Bearer ")) return errResponse("unauthorized", 401);
           const token = authHeader.slice(7);
 
           let messages: UIMessage[];
@@ -519,11 +589,14 @@ export const Route = createFileRoute("/api/chat")({
             return new Response("Bad request", { status: 400 });
           }
           if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
+          // Layer 1 guard: however much history the client holds, only a bounded
+          // window ever crosses the wire into the model.
+          if (messages.length > MAX_TURNS) messages = messages.slice(-MAX_TURNS);
 
 
 
           const key = process.env.LOVABLE_API_KEY;
-          if (!key) return new Response("The companion is unavailable right now.", { status: 500 });
+          if (!key) return errResponse("server", 500);
 
           const supabase = createClient(
             process.env.SUPABASE_URL!,
@@ -536,8 +609,21 @@ export const Route = createFileRoute("/api/chat")({
 
           const userData = await safe("auth.getUser", supabase.auth.getUser(token), { data: { user: null } } as never, 8000);
           const user = (userData as { data?: { user?: { id: string } | null } })?.data?.user;
-          if (!user) return new Response("Unauthorized", { status: 401 });
+          if (!user) return errResponse("unauthorized", 401);
           const userId = user.id;
+
+          // Account-level daily allowance (configurable in the backend, never in the UI).
+          const allowance = await safe(
+            "allowance",
+            checkAllowance(supabase, userId),
+            { allowed: true, used: 0, limit: DEFAULT_DAILY_MESSAGE_LIMIT } as AllowanceResult,
+            4000,
+          );
+          if (!allowance.allowed) {
+            console.warn("[chat] allowance exceeded", { userId, used: allowance.used, limit: allowance.limit });
+            return errResponse("allowance", 429);
+          }
+
 
           const charQuery = characterId
             ? supabase
@@ -611,8 +697,8 @@ export const Route = createFileRoute("/api/chat")({
           }
 
 
-          // ---- Phase 2 context: bounded, parallel, and never fatal ----
-          const [countRes, memRes, sumRes] = await Promise.all([
+          // ---- Layered context: bounded, parallel, and never fatal ----
+          const [countRes, memRes, sumRes, peopleRes] = await Promise.all([
             safe(
               "message count",
               supabase
@@ -626,13 +712,13 @@ export const Route = createFileRoute("/api/chat")({
               "memories",
               supabase
                 .from("memories")
-                .select("category, content, importance, pinned")
+                .select("id, category, content, importance, pinned, person_key, created_at")
                 .eq("user_id", userId)
                 .eq("character_id", character.id)
                 .order("pinned", { ascending: false })
                 .order("importance", { ascending: false })
                 .order("created_at", { ascending: false })
-                .limit(MAX_MEMORIES),
+                .limit(MEMORY_CANDIDATES),
               { data: [] } as never,
             ),
             safe(
@@ -642,15 +728,32 @@ export const Route = createFileRoute("/api/chat")({
                 .select("summary, message_count_at")
                 .eq("user_id", userId)
                 .eq("character_id", character.id)
-                .order("created_at", { ascending: false })
+                .order("message_count_at", { ascending: false })
                 .limit(MAX_SUMMARIES),
+              { data: [] } as never,
+            ),
+            safe(
+              "people",
+              supabase
+                .from("bond_people")
+                .select("id, name, name_key, relation, notes, emotional_note, mentions, salience, last_mentioned_at")
+                .eq("user_id", userId)
+                .eq("character_id", character.id)
+                .order("salience", { ascending: false })
+                .order("last_mentioned_at", { ascending: false })
+                .limit(40),
               { data: [] } as never,
             ),
           ]);
 
           const messageCount = (countRes as { count: number | null }).count ?? 0;
-          const memories = ((memRes as { data: MemoryRow[] | null }).data ?? []).slice(0, MAX_MEMORIES);
+          const memoryPool = ((memRes as { data: MemoryRow[] | null }).data ?? []);
           const summaries = ((sumRes as { data: SummaryRow[] | null }).data ?? []).slice(0, MAX_SUMMARIES).reverse();
+          const peoplePool = ((peopleRes as { data: PersonRow[] | null }).data ?? []).map((p) => ({
+            ...p,
+            notes: Array.isArray(p.notes) ? p.notes : [],
+          }));
+
 
           // Multi-factor relationship signals (never message count alone).
           const [memCountRes, sceneCountRes, stoneCountRes] = await Promise.all([
