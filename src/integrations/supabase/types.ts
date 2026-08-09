@@ -14,16 +14,99 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_limits: {
+        Row: {
+          created_at: string
+          daily_message_limit: number
+          plan: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          daily_message_limit?: number
+          plan?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          daily_message_limit?: number
+          plan?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      bond_people: {
+        Row: {
+          character_id: string
+          created_at: string
+          emotional_note: string | null
+          id: string
+          last_mentioned_at: string
+          mentions: number
+          name: string
+          name_key: string
+          notes: Json
+          relation: string | null
+          salience: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          character_id: string
+          created_at?: string
+          emotional_note?: string | null
+          id?: string
+          last_mentioned_at?: string
+          mentions?: number
+          name: string
+          name_key: string
+          notes?: Json
+          relation?: string | null
+          salience?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          character_id?: string
+          created_at?: string
+          emotional_note?: string | null
+          id?: string
+          last_mentioned_at?: string
+          mentions?: number
+          name?: string
+          name_key?: string
+          notes?: Json
+          relation?: string | null
+          salience?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bond_people_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       characters: {
         Row: {
           age: string | null
           appearance: Json | null
           archived_at: string | null
+          autonomy: string
           avatar_url: string | null
           backstory: string | null
           communication_style: string | null
           created_at: string
           daily_events_enabled: boolean
+          emotion_state: Json
+          emotion_updated_at: string
           expression: string
           farewell_message: string | null
           gender: string | null
@@ -58,11 +141,14 @@ export type Database = {
           age?: string | null
           appearance?: Json | null
           archived_at?: string | null
+          autonomy?: string
           avatar_url?: string | null
           backstory?: string | null
           communication_style?: string | null
           created_at?: string
           daily_events_enabled?: boolean
+          emotion_state?: Json
+          emotion_updated_at?: string
           expression?: string
           farewell_message?: string | null
           gender?: string | null
@@ -97,11 +183,14 @@ export type Database = {
           age?: string | null
           appearance?: Json | null
           archived_at?: string | null
+          autonomy?: string
           avatar_url?: string | null
           backstory?: string | null
           communication_style?: string | null
           created_at?: string
           daily_events_enabled?: boolean
+          emotion_state?: Json
+          emotion_updated_at?: string
           expression?: string
           farewell_message?: string | null
           gender?: string | null
@@ -355,6 +444,8 @@ export type Database = {
           created_at: string
           id: string
           importance: number
+          last_used_at: string | null
+          person_key: string | null
           pinned: boolean
           source: string
           updated_at: string
@@ -367,6 +458,8 @@ export type Database = {
           created_at?: string
           id?: string
           importance?: number
+          last_used_at?: string | null
+          person_key?: string | null
           pinned?: boolean
           source?: string
           updated_at?: string
@@ -379,6 +472,8 @@ export type Database = {
           created_at?: string
           id?: string
           importance?: number
+          last_used_at?: string | null
+          person_key?: string | null
           pinned?: boolean
           source?: string
           updated_at?: string

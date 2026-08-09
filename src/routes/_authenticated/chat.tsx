@@ -12,6 +12,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Send } from "lucide-react";
 import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, isRomanticBond, DEFAULT_BOND_SETTINGS, type BondSettings, type Expression } from "@/lib/emotion-shared";
 import { parseScene, splitActions, quickInteractions, daysTogether, journeyLabel } from "@/lib/scene-shared";
+import {
+  decodeChatError,
+  encodeChatError,
+  chatErrorMessage,
+  isRetryable,
+  type ChatErrorCode,
+} from "@/lib/chat-errors";
+
 
 export const Route = createFileRoute("/_authenticated/chat")({
   component: ChatPage,
@@ -32,9 +40,9 @@ function ChatPage() {
     queryKey: ["character"],
     queryFn: () => fetchCharacter(),
   });
-  const { data: initialMessages } = useQuery({
+  const { data: initial } = useQuery({
     queryKey: ["messages"],
-    queryFn: () => fetchMessages(),
+    queryFn: () => fetchMessages({ data: {} }),
     enabled: !!character,
   });
 
@@ -42,7 +50,7 @@ function ChatPage() {
     if (!isLoading && !character) navigate({ to: "/create" });
   }, [isLoading, character, navigate]);
 
-  if (isLoading || !character || !initialMessages) {
+  if (isLoading || !character || !initial) {
     return (
       <AppShell>
         <div className="flex min-h-[60vh] items-center justify-center">
@@ -54,9 +62,10 @@ function ChatPage() {
 
   return (
     <AppShell>
-      <ChatWindow character={character} initialMessages={initialMessages as { id: string; role: string; content: string }[]} />
+      <ChatWindow character={character} initialMessages={initial.messages} />
     </AppShell>
   );
+
 }
 
 interface CharacterRow {
@@ -114,6 +123,8 @@ function ChatWindow({
 
   const [activeBondId] = useActiveBondId();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<ChatErrorCode | null>(null);
+
 
   const fetchExperience = useServerFn(getBondExperience);
   const { data: experience } = useQuery({
@@ -141,11 +152,20 @@ function ChatWindow({
             const res = await fetch(input, { ...init, headers, signal: controller.signal });
             if (!res.ok) {
               const detail = await res.text().catch(() => "");
+              let code = decodeChatError(detail);
+              if (!code) {
+                try {
+                  code = (JSON.parse(detail) as { error?: ChatErrorCode }).error ?? null;
+                } catch {
+                  code = null;
+                }
+              }
               throw new Error(
-                res.status === 401
-                  ? "Your session expired. Please sign in again."
-                  : detail || "Something went wrong while trying to respond. Please try again.",
+                encodeChatError(
+                  code ?? (res.status === 401 ? "unauthorized" : res.status === 429 ? "rate_limit" : "server"),
+                ),
               );
+
             }
             return res;
           } finally {
@@ -161,13 +181,13 @@ function ChatWindow({
     messages: seed,
     transport,
     onError: (err) => {
-      const aborted = /abort/i.test(err?.message ?? "");
-      setErrorMsg(
-        aborted
-          ? `${character.name} is taking a little longer than expected. Try again?`
-          : err?.message || "Something went wrong while trying to respond. Please try again.",
-      );
+      const raw = err?.message ?? "";
+      const code: ChatErrorCode =
+        decodeChatError(raw) ?? (/abort|timeout/i.test(raw) ? "timeout" : "server");
+      setErrorCode(code);
+      setErrorMsg(chatErrorMessage(code, character.name));
     },
+
   });
 
   const [input, setInput] = useState("");
@@ -192,6 +212,8 @@ function ChatWindow({
     if (!text || sendingRef.current || isBusy) return;
     sendingRef.current = true;
     setErrorMsg(null);
+    setErrorCode(null);
+
     try {
       await sendMessage({ text });
     } finally {
@@ -363,15 +385,18 @@ function ChatWindow({
         {errorMsg && (
           <div className="glass flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 text-sm text-muted-foreground">
             <span>{errorMsg}</span>
-            <button
-              onClick={retry}
-              disabled={isBusy}
-              className="btn-primary rounded-xl px-3 py-1.5 text-xs disabled:opacity-50"
-            >
-              Try Again
-            </button>
+            {(!errorCode || isRetryable(errorCode)) && (
+              <button
+                onClick={retry}
+                disabled={isBusy}
+                className="btn-primary rounded-xl px-3 py-1.5 text-xs disabled:opacity-50"
+              >
+                Try Again
+              </button>
+            )}
           </div>
         )}
+
       </div>
 
       {settings.quickButtons && (

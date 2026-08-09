@@ -154,24 +154,45 @@ export const updateMood = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const MESSAGE_PAGE = 40;
+
+/**
+ * Newest page first. Pass `before` (an ISO created_at) to walk further back —
+ * the conversation can be years long, so it is never loaded all at once.
+ */
 export const getMessages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => BondInput.parse(input ?? {}))
+  .inputValidator((input: unknown) =>
+    BondInput.extend({ before: z.string().optional() }).parse(input ?? {}),
+  )
   .handler(async ({ data, context }) => {
     const c = await resolveCharacter(context.supabase, context.userId, data.characterId, {
       includeArchived: true,
     });
-    if (!c) return [];
-    const { data: rows, error } = await context.supabase
+    if (!c) return { messages: [], hasMore: false };
+    let q = context.supabase
       .from("messages")
       .select("id, role, content, created_at")
       .eq("user_id", context.userId)
       .eq("character_id", c.id)
       .order("created_at", { ascending: false })
-      .limit(60);
+      .limit(MESSAGE_PAGE + 1);
+    if (data.before) q = q.lt("created_at", data.before);
+    const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    return (rows ?? []).reverse();
+    const page = rows ?? [];
+    const hasMore = page.length > MESSAGE_PAGE;
+    return { messages: page.slice(0, MESSAGE_PAGE).reverse(), hasMore };
   });
+
+/** Today's chat usage against the account allowance. Display-only. */
+export const getChatUsage = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { readAllowance } = await import("@/lib/allowance.server");
+    return readAllowance(context.supabase, context.userId);
+  });
+
 
 export const PORTRAIT_DAILY_LIMIT = 4;
 
