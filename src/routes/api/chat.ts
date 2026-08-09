@@ -75,12 +75,8 @@ interface ActiveScenario {
 }
 
 
-interface MemoryRow {
-  category: string;
-  content: string;
-  importance: number;
-  pinned: boolean;
-}
+type MemoryRow = import("@/lib/relational.server").MemoryRow;
+
 
 interface SummaryRow {
   summary: string;
