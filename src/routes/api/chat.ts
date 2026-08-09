@@ -823,7 +823,7 @@ export const Route = createFileRoute("/api/chat")({
           const inner: InnerContext = {
             people,
             emotionSummary: describeEmotionState(emotionState),
-            autonomy: (character as { autonomy?: string }).autonomy ?? "medium",
+            autonomy: emotionMeta.autonomy ?? "medium",
           };
 
 
