@@ -982,14 +982,18 @@ export const Route = createFileRoute("/api/chat")({
 
               // Fire-and-forget: the user's reply is already delivered.
               void Promise.allSettled([
-                extractMemories({
+                extractRelational({
                   supabase,
                   userId,
                   characterId: character.id,
+                  characterName: character.name,
+                  personality: (character.personality?.traits ?? []).join(", ") || "warm, curious",
+                  stage: character.relationship_stage ?? "Stranger",
                   userText: lastUserText,
                   assistantText: text,
                   apiKey: key,
-                  existing: memories,
+                  existingMemories: memoryPool,
+                  existingPeople: peoplePool,
                 }),
                 maybeSummarize({
                   supabase,
@@ -1019,11 +1023,9 @@ export const Route = createFileRoute("/api/chat")({
             },
           });
         } catch (error) {
-          console.error("[chat] fatal:", error);
-          return new Response("Something went wrong while trying to respond. Please try again.", {
-            status: 500,
-          });
+          return errResponse(classifyError(error, "fatal"), 500);
         }
+
       },
     },
   },
