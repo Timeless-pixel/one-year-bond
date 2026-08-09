@@ -884,6 +884,8 @@ export const Route = createFileRoute("/api/chat")({
           // Only the recent window goes to the model — older context lives in summaries.
           const recent = messages.slice(-MAX_TURNS);
 
+          let streamErrorCode: ChatErrorCode | null = null;
+
           const result = streamText({
             model,
             system:
@@ -896,18 +898,33 @@ export const Route = createFileRoute("/api/chat")({
                 signals,
                 recentPhrases,
                 sceneCtx,
+                inner,
               ) + explicitMemoryNote,
 
             messages: await convertToModelMessages(recent),
             temperature: 0.95,
             onError: ({ error }) => {
-              console.error("[chat] model stream error:", error);
+              streamErrorCode = classifyError(error, "model stream");
             },
+          });
+
+          console.info("[chat] turn", {
+            userId,
+            characterId: character.id,
+            messageCount,
+            sent: recent.length,
+            memories: memories.length,
+            people: people.length,
+            summaries: summaries.length,
+            usedToday: allowance.used,
+            ms: Date.now() - startedAt,
           });
 
           return result.toUIMessageStreamResponse({
             originalMessages: messages,
-            onError: () => "Something went wrong while trying to respond. Please try again.",
+            onError: (error) =>
+              encodeChatError(streamErrorCode ?? classifyError(error, "stream")),
+
             onFinish: async ({ responseMessage }) => {
               const raw = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
               if (!raw.trim()) return;
