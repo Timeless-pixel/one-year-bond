@@ -212,6 +212,8 @@ function ChatWindow({
     if (!text || sendingRef.current || isBusy) return;
     sendingRef.current = true;
     setErrorMsg(null);
+    setErrorCode(null);
+
     try {
       await sendMessage({ text });
     } finally {
