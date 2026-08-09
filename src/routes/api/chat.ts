@@ -808,12 +808,18 @@ export const Route = createFileRoute("/api/chat")({
           const people = selectRelevantPeople(peoplePool, lastUserText, MAX_PEOPLE);
 
           // The character's own drifting inner weather, decayed since last touched.
+          const emotionMeta = character as unknown as {
+            emotion_state?: unknown;
+            emotion_updated_at?: string | null;
+            autonomy?: string | null;
+          };
           const emotionState = decayEmotionState(
-            normalizeEmotionState((character as { emotion_state?: unknown }).emotion_state),
-            character.emotion_updated_at
-              ? (Date.now() - new Date(character.emotion_updated_at).getTime()) / 3_600_000
+            normalizeEmotionState(emotionMeta.emotion_state),
+            emotionMeta.emotion_updated_at
+              ? (Date.now() - new Date(emotionMeta.emotion_updated_at).getTime()) / 3_600_000
               : 0,
           );
+
           const inner: InnerContext = {
             people,
             emotionSummary: describeEmotionState(emotionState),
