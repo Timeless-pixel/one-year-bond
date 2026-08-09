@@ -179,13 +179,13 @@ function ChatWindow({
     messages: seed,
     transport,
     onError: (err) => {
-      const aborted = /abort/i.test(err?.message ?? "");
-      setErrorMsg(
-        aborted
-          ? `${character.name} is taking a little longer than expected. Try again?`
-          : err?.message || "Something went wrong while trying to respond. Please try again.",
-      );
+      const raw = err?.message ?? "";
+      const code: ChatErrorCode =
+        decodeChatError(raw) ?? (/abort|timeout/i.test(raw) ? "timeout" : "server");
+      setErrorCode(code);
+      setErrorMsg(chatErrorMessage(code, character.name));
     },
+
   });
 
   const [input, setInput] = useState("");
