@@ -803,6 +803,25 @@ export const Route = createFileRoute("/api/chat")({
           const lastUser = [...messages].reverse().find((m) => m.role === "user");
           const lastUserText = lastUser?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
 
+          // Layer 3: only the memories and people that matter to THIS message.
+          const memories = selectRelevantMemories(memoryPool, lastUserText, MAX_MEMORIES);
+          const people = selectRelevantPeople(peoplePool, lastUserText, MAX_PEOPLE);
+
+          // The character's own drifting inner weather, decayed since last touched.
+          const emotionState = decayEmotionState(
+            normalizeEmotionState((character as { emotion_state?: unknown }).emotion_state),
+            character.emotion_updated_at
+              ? (Date.now() - new Date(character.emotion_updated_at).getTime()) / 3_600_000
+              : 0,
+          );
+          const inner: InnerContext = {
+            people,
+            emotionSummary: describeEmotionState(emotionState),
+            autonomy: (character as { autonomy?: string }).autonomy ?? "medium",
+          };
+
+
+
           // Explicit memory commands: "remember that ..." / "forget that ..."
           const rememberMatch = lastUserText.match(/^\s*(?:please\s+)?remember\s+(?:that\s+)?(.{3,300}?)[.!?]?\s*$/i);
           const forgetMatch = lastUserText.match(/^\s*(?:please\s+)?forget\s+(?:that\s+)?(.{3,200}?)[.!?]?\s*$/i);
