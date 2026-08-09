@@ -32,9 +32,9 @@ function ChatPage() {
     queryKey: ["character"],
     queryFn: () => fetchCharacter(),
   });
-  const { data: initialMessages } = useQuery({
+  const { data: initial } = useQuery({
     queryKey: ["messages"],
-    queryFn: () => fetchMessages(),
+    queryFn: () => fetchMessages({ data: {} }),
     enabled: !!character,
   });
 
@@ -42,7 +42,7 @@ function ChatPage() {
     if (!isLoading && !character) navigate({ to: "/create" });
   }, [isLoading, character, navigate]);
 
-  if (isLoading || !character || !initialMessages) {
+  if (isLoading || !character || !initial) {
     return (
       <AppShell>
         <div className="flex min-h-[60vh] items-center justify-center">
@@ -54,9 +54,10 @@ function ChatPage() {
 
   return (
     <AppShell>
-      <ChatWindow character={character} initialMessages={initialMessages as { id: string; role: string; content: string }[]} />
+      <ChatWindow character={character} initialMessages={initial.messages} />
     </AppShell>
   );
+
 }
 
 interface CharacterRow {
