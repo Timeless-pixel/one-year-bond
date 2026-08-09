@@ -12,6 +12,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Send } from "lucide-react";
 import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, isRomanticBond, DEFAULT_BOND_SETTINGS, type BondSettings, type Expression } from "@/lib/emotion-shared";
 import { parseScene, splitActions, quickInteractions, daysTogether, journeyLabel } from "@/lib/scene-shared";
+import {
+  decodeChatError,
+  encodeChatError,
+  chatErrorMessage,
+  isRetryable,
+  type ChatErrorCode,
+} from "@/lib/chat-errors";
+
 
 export const Route = createFileRoute("/_authenticated/chat")({
   component: ChatPage,
