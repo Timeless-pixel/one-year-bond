@@ -383,15 +383,18 @@ function ChatWindow({
         {errorMsg && (
           <div className="glass flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 text-sm text-muted-foreground">
             <span>{errorMsg}</span>
-            <button
-              onClick={retry}
-              disabled={isBusy}
-              className="btn-primary rounded-xl px-3 py-1.5 text-xs disabled:opacity-50"
-            >
-              Try Again
-            </button>
+            {(!errorCode || isRetryable(errorCode)) && (
+              <button
+                onClick={retry}
+                disabled={isBusy}
+                className="btn-primary rounded-xl px-3 py-1.5 text-xs disabled:opacity-50"
+              >
+                Try Again
+              </button>
+            )}
           </div>
         )}
+
       </div>
 
       {settings.quickButtons && (
