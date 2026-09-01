@@ -567,11 +567,48 @@ async function safe<T>(label: string, p: PromiseLike<T>, fallback: T, ms = 5000)
   }
 }
 
+/**
+ * Same idea as `safe`, but for a query the reply genuinely cannot proceed
+ * without. An occasional edge->database connection stalls (the request never
+ * reaches Postgres, so it never comes back); a fresh attempt on a new socket
+ * almost always succeeds immediately, so retry rather than fail the turn.
+ */
+async function critical<T>(
+  label: string,
+  make: () => PromiseLike<T>,
+  attempts = 3,
+  ms = 6000,
+): Promise<{ value: T | null; timedOut: boolean }> {
+  let timedOut = false;
+  for (let i = 0; i < attempts; i++) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const marker = Symbol("timeout");
+      const raced = await Promise.race([
+        Promise.resolve(make()),
+        new Promise<typeof marker>((resolve) => {
+          timer = setTimeout(() => resolve(marker), ms);
+        }),
+      ]);
+      if (raced !== marker) return { value: raced as T, timedOut: false };
+      timedOut = true;
+      console.warn(`[chat] ${label} stalled after ${ms}ms (attempt ${i + 1}/${attempts}) — retrying`);
+    } catch (e) {
+      console.warn(`[chat] ${label} failed (attempt ${i + 1}/${attempts}):`, e instanceof Error ? e.message : e);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  console.error(`[chat] ${label} exhausted ${attempts} attempts`);
+  return { value: null, timedOut };
+}
+
 const MAX_MEMORIES = 20;
 const MEMORY_CANDIDATES = 120;
 const MAX_PEOPLE = 8;
 const MAX_SUMMARIES = 3;
 const MAX_TURNS = 24;
+
 
 
 export const Route = createFileRoute("/api/chat")({
