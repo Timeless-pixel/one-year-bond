@@ -677,9 +677,16 @@ export const Route = createFileRoute("/api/chat")({
             },
           );
 
-          const userData = await safe("auth.getUser", supabase.auth.getUser(token), { data: { user: null } } as never, 8000);
-          const user = (userData as { data?: { user?: { id: string } | null } })?.data?.user;
-          if (!user) return errResponse("unauthorized", 401);
+          const authAttempt = await critical(
+            "auth.getUser",
+            () => supabase.auth.getUser(token),
+            2,
+            6000,
+          );
+          const user = (authAttempt.value as { data?: { user?: { id: string } | null } } | null)?.data?.user;
+          if (!user) {
+            return authAttempt.timedOut ? errResponse("timeout", 503) : errResponse("unauthorized", 401);
+          }
           const userId = user.id;
 
           // Account-level daily allowance (configurable in the backend, never in the UI).
@@ -695,24 +702,43 @@ export const Route = createFileRoute("/api/chat")({
           }
 
 
-          const charQuery = characterId
-            ? supabase
-                .from("characters")
-                .select("*")
-                .eq("id", characterId)
-                .eq("user_id", userId)
-                .maybeSingle()
-            : supabase
-                .from("characters")
-                .select("*")
-                .eq("user_id", userId)
-                .eq("status", "active")
-                .order("last_active_at", { ascending: false })
-                .limit(1)
-                .maybeSingle();
-          const charRes = await safe("load character", charQuery, { data: null } as never, 8000);
-          const character = (charRes as { data: Character | null }).data;
-          if (!character) return new Response("No character", { status: 400 });
+          const makeCharQuery = () =>
+            characterId
+              ? supabase
+                  .from("characters")
+                  .select("*")
+                  .eq("id", characterId)
+                  .eq("user_id", userId)
+                  .maybeSingle()
+              : supabase
+                  .from("characters")
+                  .select("*")
+                  .eq("user_id", userId)
+                  .eq("status", "active")
+                  .order("last_active_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+          // This is the one query the turn cannot continue without. A stalled
+          // edge->database connection used to surface here as "no character"
+          // and killed the whole reply — now it retries on a fresh connection.
+          const charAttempt = await critical("load character", makeCharQuery, 3, 6000);
+          const charRes = charAttempt.value as { data: Character | null; error?: unknown } | null;
+          if (charRes?.error) classifyError(charRes.error, "load character query error");
+          const character = charRes?.data ?? null;
+          if (!character) {
+            if (charAttempt.timedOut || !charRes) {
+              console.error("[chat] character unavailable — database did not respond", { userId, characterId });
+              return errResponse("timeout", 503);
+            }
+            console.error("[chat] no character row for user", { userId, characterId });
+            return errResponse("no_character", 400);
+          }
+          // A bond missing its core identity would produce nonsense — fail clearly.
+          if (!character.name) {
+            console.error("[chat] character row incomplete", { userId, characterId: character.id });
+            return errResponse("no_character", 400);
+          }
+
 
           const bondSettings = normalizeSettings(character.settings);
           const hoursAway = character.last_active_at
