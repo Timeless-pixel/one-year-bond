@@ -309,15 +309,38 @@ Now just be ${c.name}. Reply as them.`;
 
 /** Maps any upstream failure onto a user-safe category. Logs the real cause. */
 function classifyError(error: unknown, label: string): ChatErrorCode {
+  const err = error as {
+    statusCode?: number;
+    status?: number;
+    responseBody?: unknown;
+    cause?: unknown;
+    name?: string;
+    stack?: string;
+  } | null;
   const msg = error instanceof Error ? error.message : String(error ?? "");
   const status =
-    (error as { statusCode?: number; status?: number })?.statusCode ??
-    (error as { status?: number })?.status ??
+    err?.statusCode ??
+    err?.status ??
     (/\b(4\d\d|5\d\d)\b/.exec(msg)?.[1] ? Number(/\b(4\d\d|5\d\d)\b/.exec(msg)![1]) : undefined);
-  console.error(`[chat] ${label}`, { status, message: msg.slice(0, 400) });
+  // Development diagnostics: everything needed to tell the failure classes apart.
+  // Never includes keys, tokens or prompt content.
+  console.error(`[chat] ${label}`, {
+    name: err?.name,
+    status,
+    message: msg.slice(0, 600),
+    body:
+      typeof err?.responseBody === "string"
+        ? err.responseBody.slice(0, 600)
+        : err?.responseBody
+          ? JSON.stringify(err.responseBody).slice(0, 600)
+          : undefined,
+    cause:
+      err?.cause instanceof Error ? err.cause.message.slice(0, 300) : undefined,
+  });
   if (status === 429 || /rate.?limit/i.test(msg)) return "rate_limit";
   if (status === 402 || /payment required|credit|quota|insufficient/i.test(msg)) return "quota";
   if (status === 401 || status === 403) return "unauthorized";
+  if (status === 400 && /token|context|too (long|large)|maximum/i.test(msg)) return "context";
   if (/abort|timed? ?out|ETIMEDOUT/i.test(msg)) return "timeout";
   if (/fetch failed|network|ECONNRESET|ENOTFOUND/i.test(msg)) return "offline";
   return "server";
@@ -330,6 +353,7 @@ function errResponse(code: ChatErrorCode, status: number) {
     headers: { "content-type": "application/json" },
   });
 }
+
 
 
 
@@ -543,11 +567,48 @@ async function safe<T>(label: string, p: PromiseLike<T>, fallback: T, ms = 5000)
   }
 }
 
+/**
+ * Same idea as `safe`, but for a query the reply genuinely cannot proceed
+ * without. An occasional edge->database connection stalls (the request never
+ * reaches Postgres, so it never comes back); a fresh attempt on a new socket
+ * almost always succeeds immediately, so retry rather than fail the turn.
+ */
+async function critical<T>(
+  label: string,
+  make: () => PromiseLike<T>,
+  attempts = 3,
+  ms = 6000,
+): Promise<{ value: T | null; timedOut: boolean }> {
+  let timedOut = false;
+  for (let i = 0; i < attempts; i++) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const marker = Symbol("timeout");
+      const raced = await Promise.race([
+        Promise.resolve(make()),
+        new Promise<typeof marker>((resolve) => {
+          timer = setTimeout(() => resolve(marker), ms);
+        }),
+      ]);
+      if (raced !== marker) return { value: raced as T, timedOut: false };
+      timedOut = true;
+      console.warn(`[chat] ${label} stalled after ${ms}ms (attempt ${i + 1}/${attempts}) — retrying`);
+    } catch (e) {
+      console.warn(`[chat] ${label} failed (attempt ${i + 1}/${attempts}):`, e instanceof Error ? e.message : e);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  console.error(`[chat] ${label} exhausted ${attempts} attempts`);
+  return { value: null, timedOut };
+}
+
 const MAX_MEMORIES = 20;
 const MEMORY_CANDIDATES = 120;
 const MAX_PEOPLE = 8;
 const MAX_SUMMARIES = 3;
 const MAX_TURNS = 24;
+
 
 
 export const Route = createFileRoute("/api/chat")({
@@ -564,14 +625,19 @@ export const Route = createFileRoute("/api/chat")({
           let scenarioSessionId: string | null = null;
           let characterId: string | null = null;
           let localHour: number | null = null;
+          // Set by the client's "Try Again": regenerate only, never re-record
+          // the user's message or its side effects.
+          let isRetry = false;
           try {
             const body = (await request.json()) as {
               messages: UIMessage[];
               scenarioSessionId?: string | null;
               characterId?: string | null;
               localHour?: number | null;
+              retry?: boolean;
             };
             messages = body.messages;
+            isRetry = body.retry === true;
             characterId =
               typeof body.characterId === "string" && body.characterId.length > 0
                 ? body.characterId
@@ -584,13 +650,18 @@ export const Route = createFileRoute("/api/chat")({
               typeof body.localHour === "number" && body.localHour >= 0 && body.localHour <= 23
                 ? Math.floor(body.localHour)
                 : null;
-          } catch {
-            return new Response("Bad request", { status: 400 });
+          } catch (e) {
+            classifyError(e, "malformed request body");
+            return errResponse("server", 400);
           }
-          if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
+          if (!Array.isArray(messages)) {
+            console.error("[chat] request body had no messages array");
+            return errResponse("server", 400);
+          }
           // Layer 1 guard: however much history the client holds, only a bounded
           // window ever crosses the wire into the model.
           if (messages.length > MAX_TURNS) messages = messages.slice(-MAX_TURNS);
+
 
 
 
@@ -606,9 +677,16 @@ export const Route = createFileRoute("/api/chat")({
             },
           );
 
-          const userData = await safe("auth.getUser", supabase.auth.getUser(token), { data: { user: null } } as never, 8000);
-          const user = (userData as { data?: { user?: { id: string } | null } })?.data?.user;
-          if (!user) return errResponse("unauthorized", 401);
+          const authAttempt = await critical(
+            "auth.getUser",
+            () => supabase.auth.getUser(token),
+            2,
+            6000,
+          );
+          const user = (authAttempt.value as { data?: { user?: { id: string } | null } } | null)?.data?.user;
+          if (!user) {
+            return authAttempt.timedOut ? errResponse("timeout", 503) : errResponse("unauthorized", 401);
+          }
           const userId = user.id;
 
           // Account-level daily allowance (configurable in the backend, never in the UI).
@@ -624,24 +702,43 @@ export const Route = createFileRoute("/api/chat")({
           }
 
 
-          const charQuery = characterId
-            ? supabase
-                .from("characters")
-                .select("*")
-                .eq("id", characterId)
-                .eq("user_id", userId)
-                .maybeSingle()
-            : supabase
-                .from("characters")
-                .select("*")
-                .eq("user_id", userId)
-                .eq("status", "active")
-                .order("last_active_at", { ascending: false })
-                .limit(1)
-                .maybeSingle();
-          const charRes = await safe("load character", charQuery, { data: null } as never, 8000);
-          const character = (charRes as { data: Character | null }).data;
-          if (!character) return new Response("No character", { status: 400 });
+          const makeCharQuery = () =>
+            characterId
+              ? supabase
+                  .from("characters")
+                  .select("*")
+                  .eq("id", characterId)
+                  .eq("user_id", userId)
+                  .maybeSingle()
+              : supabase
+                  .from("characters")
+                  .select("*")
+                  .eq("user_id", userId)
+                  .eq("status", "active")
+                  .order("last_active_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+          // This is the one query the turn cannot continue without. A stalled
+          // edge->database connection used to surface here as "no character"
+          // and killed the whole reply — now it retries on a fresh connection.
+          const charAttempt = await critical("load character", makeCharQuery, 3, 6000);
+          const charRes = charAttempt.value as { data: Character | null; error?: unknown } | null;
+          if (charRes?.error) classifyError(charRes.error, "load character query error");
+          const character = charRes?.data ?? null;
+          if (!character) {
+            if (charAttempt.timedOut || !charRes) {
+              console.error("[chat] character unavailable — database did not respond", { userId, characterId });
+              return errResponse("timeout", 503);
+            }
+            console.error("[chat] no character row for user", { userId, characterId });
+            return errResponse("no_character", 400);
+          }
+          // A bond missing its core identity would produce nonsense — fail clearly.
+          if (!character.name) {
+            console.error("[chat] character row incomplete", { userId, characterId: character.id });
+            return errResponse("no_character", 400);
+          }
+
 
           const bondSettings = normalizeSettings(character.settings);
           const hoursAway = character.last_active_at
