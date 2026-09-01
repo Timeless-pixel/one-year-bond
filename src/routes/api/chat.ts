@@ -309,15 +309,38 @@ Now just be ${c.name}. Reply as them.`;
 
 /** Maps any upstream failure onto a user-safe category. Logs the real cause. */
 function classifyError(error: unknown, label: string): ChatErrorCode {
+  const err = error as {
+    statusCode?: number;
+    status?: number;
+    responseBody?: unknown;
+    cause?: unknown;
+    name?: string;
+    stack?: string;
+  } | null;
   const msg = error instanceof Error ? error.message : String(error ?? "");
   const status =
-    (error as { statusCode?: number; status?: number })?.statusCode ??
-    (error as { status?: number })?.status ??
+    err?.statusCode ??
+    err?.status ??
     (/\b(4\d\d|5\d\d)\b/.exec(msg)?.[1] ? Number(/\b(4\d\d|5\d\d)\b/.exec(msg)![1]) : undefined);
-  console.error(`[chat] ${label}`, { status, message: msg.slice(0, 400) });
+  // Development diagnostics: everything needed to tell the failure classes apart.
+  // Never includes keys, tokens or prompt content.
+  console.error(`[chat] ${label}`, {
+    name: err?.name,
+    status,
+    message: msg.slice(0, 600),
+    body:
+      typeof err?.responseBody === "string"
+        ? err.responseBody.slice(0, 600)
+        : err?.responseBody
+          ? JSON.stringify(err.responseBody).slice(0, 600)
+          : undefined,
+    cause:
+      err?.cause instanceof Error ? err.cause.message.slice(0, 300) : undefined,
+  });
   if (status === 429 || /rate.?limit/i.test(msg)) return "rate_limit";
   if (status === 402 || /payment required|credit|quota|insufficient/i.test(msg)) return "quota";
   if (status === 401 || status === 403) return "unauthorized";
+  if (status === 400 && /token|context|too (long|large)|maximum/i.test(msg)) return "context";
   if (/abort|timed? ?out|ETIMEDOUT/i.test(msg)) return "timeout";
   if (/fetch failed|network|ECONNRESET|ENOTFOUND/i.test(msg)) return "offline";
   return "server";
@@ -330,6 +353,7 @@ function errResponse(code: ChatErrorCode, status: number) {
     headers: { "content-type": "application/json" },
   });
 }
+
 
 
 
