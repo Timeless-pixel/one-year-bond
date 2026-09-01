@@ -735,7 +735,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      bond_signal_counts: { Args: { p_character_id: string }; Returns: Json }
     }
     Enums: {
       [_ in never]: never
