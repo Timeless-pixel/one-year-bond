@@ -625,14 +625,19 @@ export const Route = createFileRoute("/api/chat")({
           let scenarioSessionId: string | null = null;
           let characterId: string | null = null;
           let localHour: number | null = null;
+          // Set by the client's "Try Again": regenerate only, never re-record
+          // the user's message or its side effects.
+          let isRetry = false;
           try {
             const body = (await request.json()) as {
               messages: UIMessage[];
               scenarioSessionId?: string | null;
               characterId?: string | null;
               localHour?: number | null;
+              retry?: boolean;
             };
             messages = body.messages;
+            isRetry = body.retry === true;
             characterId =
               typeof body.characterId === "string" && body.characterId.length > 0
                 ? body.characterId
@@ -645,13 +650,18 @@ export const Route = createFileRoute("/api/chat")({
               typeof body.localHour === "number" && body.localHour >= 0 && body.localHour <= 23
                 ? Math.floor(body.localHour)
                 : null;
-          } catch {
-            return new Response("Bad request", { status: 400 });
+          } catch (e) {
+            classifyError(e, "malformed request body");
+            return errResponse("server", 400);
           }
-          if (!Array.isArray(messages)) return new Response("Bad request", { status: 400 });
+          if (!Array.isArray(messages)) {
+            console.error("[chat] request body had no messages array");
+            return errResponse("server", 400);
+          }
           // Layer 1 guard: however much history the client holds, only a bounded
           // window ever crosses the wire into the model.
           if (messages.length > MAX_TURNS) messages = messages.slice(-MAX_TURNS);
+
 
 
 
