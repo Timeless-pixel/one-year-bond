@@ -24,6 +24,7 @@ import {
   type PersonRow,
 } from "@/lib/relational.server";
 import { encodeChatError, type ChatErrorCode } from "@/lib/chat-errors";
+import { CHAT_LIMITS } from "@/lib/chat-limits";
 import {
   checkAllowance,
   DEFAULT_DAILY_MESSAGE_LIMIT,
@@ -667,6 +668,16 @@ export const Route = createFileRoute("/api/chat")({
           // Layer 1 guard: however much history the client holds, only a bounded
           // window ever crosses the wire into the model.
           if (messages.length > MAX_TURNS) messages = messages.slice(-MAX_TURNS);
+
+          // Cheap abuse guard before any model or database work.
+          const incoming = messages[messages.length - 1];
+          const incomingText =
+            incoming?.role === "user"
+              ? incoming.parts.map((p) => (p.type === "text" ? p.text : "")).join("")
+              : "";
+          if (incomingText.length > CHAT_LIMITS.maxMessageLength) {
+            return errResponse("too_long", 413);
+          }
 
 
 
