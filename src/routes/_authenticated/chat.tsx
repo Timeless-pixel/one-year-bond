@@ -12,8 +12,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Send } from "lucide-react";
 import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, isRomanticBond, DEFAULT_BOND_SETTINGS, type BondSettings, type Expression } from "@/lib/emotion-shared";
 import { parseScene, splitActions, quickInteractions, daysTogether, journeyLabel } from "@/lib/scene-shared";
+import { getChatUsage } from "@/lib/character.functions";
+import { CooldownCard, UsageMeter } from "@/components/ChatLimit";
+import type { ChatLimitState } from "@/lib/chat-limits";
 import {
   decodeChatError,
+  isLimitError,
   encodeChatError,
   chatErrorMessage,
   isRetryable,
@@ -124,6 +128,23 @@ function ChatWindow({
   const [activeBondId] = useActiveBondId();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<ChatErrorCode | null>(null);
+  // Absolute timestamp reported by the backend — survives refresh because the
+  // backend recomputes it from persisted rows.
+  const limitRef = useRef<{ retryAt: string | null; reason: string | null }>({
+    retryAt: null,
+    reason: null,
+  });
+  const [limitInfo, setLimitInfo] = useState<{ retryAt: string | null; reason: string | null } | null>(
+    null,
+  );
+  const [showUsage, setShowUsage] = useState(false);
+
+  const fetchUsage = useServerFn(getChatUsage);
+  const { data: usage, refetch: refetchUsage } = useQuery({
+    queryKey: ["chat-usage"],
+    queryFn: () => fetchUsage(),
+    refetchOnWindowFocus: true,
+  });
 
 
   const fetchExperience = useServerFn(getBondExperience);
@@ -153,11 +174,27 @@ function ChatWindow({
             if (!res.ok) {
               const detail = await res.text().catch(() => "");
               let code = decodeChatError(detail);
-              if (!code) {
-                try {
-                  code = (JSON.parse(detail) as { error?: ChatErrorCode }).error ?? null;
-                } catch {
-                  code = null;
+              try {
+                const parsed = JSON.parse(detail) as {
+                  error?: ChatErrorCode;
+                  retryAt?: string | null;
+                  reason?: string | null;
+                };
+                code = code ?? parsed.error ?? null;
+                limitRef.current = {
+                  retryAt: parsed.retryAt ?? null,
+                  reason: parsed.reason ?? null,
+                };
+              } catch {
+                limitRef.current = { retryAt: null, reason: null };
+              }
+              if (!limitRef.current.retryAt) {
+                const ra = res.headers.get("retry-after");
+                if (ra && Number.isFinite(Number(ra))) {
+                  limitRef.current = {
+                    retryAt: new Date(Date.now() + Number(ra) * 1000).toISOString(),
+                    reason: limitRef.current.reason ?? "provider",
+                  };
                 }
               }
               throw new Error(
@@ -186,6 +223,13 @@ function ChatWindow({
         decodeChatError(raw) ?? (/abort|timeout/i.test(raw) ? "timeout" : "server");
       setErrorCode(code);
       setErrorMsg(chatErrorMessage(code, character.name));
+      if (isLimitError(code)) {
+        setLimitInfo({
+          retryAt: limitRef.current.retryAt,
+          reason: limitRef.current.reason ?? (code === "allowance" ? "daily" : "burst"),
+        });
+        void refetchUsage();
+      }
     },
 
   });
@@ -208,14 +252,15 @@ function ChatWindow({
 
   const isBusy = status === "submitted" || status === "streaming";
 
-  async function send(text: string) {
+  async function send(text: string, opts?: { retry?: boolean }) {
     if (!text || sendingRef.current || isBusy) return;
     sendingRef.current = true;
     setErrorMsg(null);
     setErrorCode(null);
+    setLimitInfo(null);
 
     try {
-      await sendMessage({ text });
+      await sendMessage({ text }, opts?.retry ? { body: { retry: true } } : undefined);
     } finally {
       sendingRef.current = false;
     }
@@ -230,12 +275,15 @@ function ChatWindow({
 
   async function retry() {
     setErrorMsg(null);
-    // Drop the trailing user message and resend it.
+    setErrorCode(null);
+    setLimitInfo(null);
+    // Regenerate from the message that is already on screen and already saved:
+    // the server skips re-recording it when `retry` is set.
     const last = [...messages].reverse().find((m) => m.role === "user");
     const text = last?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
     if (!text) return;
     setMessages(messages.filter((m) => m.id !== last!.id));
-    await send(text);
+    await send(text, { retry: true });
   }
 
   // Auto-generate first message if empty
@@ -267,6 +315,14 @@ function ChatWindow({
       }),
     [experience?.level?.index, character.relationship_type, liveExpression],
   );
+
+  const serverLimited = usage && usage.allowed === false ? usage : null;
+  const activeLimit =
+    limitInfo ??
+    (serverLimited
+      ? { retryAt: serverLimited.cooldownUntil, reason: serverLimited.reason }
+      : null);
+  const limited = Boolean(activeLimit);
 
   const days = character.journey_start_date ? daysTogether(character.journey_start_date) : null;
 
@@ -382,7 +438,22 @@ function ChatWindow({
             </span>
           </div>
         )}
-        {errorMsg && (
+        {limited && activeLimit && (
+          <CooldownCard
+            name={character.name}
+            reason={(activeLimit.reason as "burst" | "daily" | "provider" | null) ?? "burst"}
+            until={activeLimit.retryAt}
+            busy={isBusy}
+            onReady={() => void refetchUsage()}
+            onContinue={() => {
+              setLimitInfo(null);
+              setErrorMsg(null);
+              setErrorCode(null);
+              void refetchUsage();
+            }}
+          />
+        )}
+        {errorMsg && !limited && (
           <div className="glass flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 text-sm text-muted-foreground">
             <span>{errorMsg}</span>
             {(!errorCode || isRetryable(errorCode)) && (
@@ -414,6 +485,18 @@ function ChatWindow({
         </div>
       )}
 
+      {usage && (
+        <div className="mb-2">
+          <button
+            onClick={() => setShowUsage((v) => !v)}
+            className="text-[11px] text-muted-foreground transition hover:text-foreground"
+          >
+            {showUsage ? "Hide usage" : `${usage.remaining} messages left today`}
+          </button>
+          {showUsage && <UsageMeter state={usage as ChatLimitState} className="mt-2" />}
+        </div>
+      )}
+
       <div className="glass sticky bottom-24 mb-4 flex items-end gap-2 rounded-2xl p-2 md:bottom-4">
         <textarea
           ref={inputRef}
@@ -425,14 +508,19 @@ function ChatWindow({
               submit();
             }
           }}
-          placeholder={`Message ${character.name}… (*actions in asterisks*)`}
+          disabled={limited}
+          placeholder={
+            limited
+              ? "Chat paused — see the timer above"
+              : `Message ${character.name}… (*actions in asterisks*)`
+          }
           rows={1}
           className="flex-1 resize-none bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground"
           style={{ maxHeight: "160px" }}
         />
         <button
           onClick={submit}
-          disabled={isBusy || !input.trim()}
+          disabled={isBusy || limited || !input.trim()}
           className="btn-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-xl disabled:opacity-50"
         >
           <Send className="h-4 w-4" />
