@@ -12,8 +12,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Send } from "lucide-react";
 import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, isRomanticBond, DEFAULT_BOND_SETTINGS, type BondSettings, type Expression } from "@/lib/emotion-shared";
 import { parseScene, splitActions, quickInteractions, daysTogether, journeyLabel } from "@/lib/scene-shared";
+import { getChatUsage } from "@/lib/character.functions";
+import { CooldownCard, UsageMeter } from "@/components/ChatLimit";
+import type { ChatLimitState } from "@/lib/chat-limits";
 import {
   decodeChatError,
+  isLimitError,
   encodeChatError,
   chatErrorMessage,
   isRetryable,
@@ -124,6 +128,23 @@ function ChatWindow({
   const [activeBondId] = useActiveBondId();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<ChatErrorCode | null>(null);
+  // Absolute timestamp reported by the backend — survives refresh because the
+  // backend recomputes it from persisted rows.
+  const limitRef = useRef<{ retryAt: string | null; reason: string | null }>({
+    retryAt: null,
+    reason: null,
+  });
+  const [limitInfo, setLimitInfo] = useState<{ retryAt: string | null; reason: string | null } | null>(
+    null,
+  );
+  const [showUsage, setShowUsage] = useState(false);
+
+  const fetchUsage = useServerFn(getChatUsage);
+  const { data: usage, refetch: refetchUsage } = useQuery({
+    queryKey: ["chat-usage"],
+    queryFn: () => fetchUsage(),
+    refetchOnWindowFocus: true,
+  });
 
 
   const fetchExperience = useServerFn(getBondExperience);
@@ -153,11 +174,27 @@ function ChatWindow({
             if (!res.ok) {
               const detail = await res.text().catch(() => "");
               let code = decodeChatError(detail);
-              if (!code) {
-                try {
-                  code = (JSON.parse(detail) as { error?: ChatErrorCode }).error ?? null;
-                } catch {
-                  code = null;
+              try {
+                const parsed = JSON.parse(detail) as {
+                  error?: ChatErrorCode;
+                  retryAt?: string | null;
+                  reason?: string | null;
+                };
+                code = code ?? parsed.error ?? null;
+                limitRef.current = {
+                  retryAt: parsed.retryAt ?? null,
+                  reason: parsed.reason ?? null,
+                };
+              } catch {
+                limitRef.current = { retryAt: null, reason: null };
+              }
+              if (!limitRef.current.retryAt) {
+                const ra = res.headers.get("retry-after");
+                if (ra && Number.isFinite(Number(ra))) {
+                  limitRef.current = {
+                    retryAt: new Date(Date.now() + Number(ra) * 1000).toISOString(),
+                    reason: limitRef.current.reason ?? "provider",
+                  };
                 }
               }
               throw new Error(
@@ -186,6 +223,13 @@ function ChatWindow({
         decodeChatError(raw) ?? (/abort|timeout/i.test(raw) ? "timeout" : "server");
       setErrorCode(code);
       setErrorMsg(chatErrorMessage(code, character.name));
+      if (isLimitError(code)) {
+        setLimitInfo({
+          retryAt: limitRef.current.retryAt,
+          reason: limitRef.current.reason ?? (code === "allowance" ? "daily" : "burst"),
+        });
+        void refetchUsage();
+      }
     },
 
   });
@@ -213,6 +257,7 @@ function ChatWindow({
     sendingRef.current = true;
     setErrorMsg(null);
     setErrorCode(null);
+    setLimitInfo(null);
 
     try {
       await sendMessage({ text });
