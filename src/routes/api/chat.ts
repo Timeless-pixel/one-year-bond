@@ -347,11 +347,17 @@ function classifyError(error: unknown, label: string): ChatErrorCode {
 }
 
 /** The browser only ever sees a category — never a provider or database error. */
-function errResponse(code: ChatErrorCode, status: number) {
-  return new Response(JSON.stringify({ error: code }), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
+function errResponse(
+  code: ChatErrorCode,
+  status: number,
+  extra?: { retryAt?: string | null; used?: number; limit?: number; reason?: string | null },
+) {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (extra?.retryAt) {
+    const secs = Math.max(1, Math.ceil((new Date(extra.retryAt).getTime() - Date.now()) / 1000));
+    headers["retry-after"] = String(secs);
+  }
+  return new Response(JSON.stringify({ error: code, ...extra }), { status, headers });
 }
 
 
@@ -697,8 +703,18 @@ export const Route = createFileRoute("/api/chat")({
             4000,
           );
           if (!allowance.allowed) {
-            console.warn("[chat] allowance exceeded", { userId, used: allowance.used, limit: allowance.limit });
-            return errResponse("allowance", 429);
+            console.warn("[chat] allowance exceeded", {
+              userId,
+              used: allowance.used,
+              limit: allowance.limit,
+              reason: allowance.reason,
+            });
+            return errResponse(allowance.reason === "daily" ? "allowance" : "cooldown", 429, {
+              retryAt: allowance.cooldownUntil,
+              used: allowance.used,
+              limit: allowance.limit,
+              reason: allowance.reason,
+            });
           }
 
 
@@ -963,7 +979,9 @@ export const Route = createFileRoute("/api/chat")({
             explicitMemoryNote = `\nTHE USER JUST ASKED YOU TO FORGET SOMETHING. Acknowledge it gently in your own voice — don't be robotic about it.`;
           }
 
-          if (lastUser) {
+          // A retry regenerates the reply only: the user's message (and its
+          // allowance cost) was already recorded on the original attempt.
+          if (lastUser && !isRetry) {
             await safe(
               "save user message",
               supabase.from("messages").insert({
