@@ -4,6 +4,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { getBondExperience, updateBondSettings, updateLoveLanguage } from "@/lib/bond.functions";
+import { getChatUsage } from "@/lib/character.functions";
+import { UsageMeter, useCountdown } from "@/components/ChatLimit";
+import { formatClock, formatCountdown, type ChatLimitState } from "@/lib/chat-limits";
 import { useActiveBondId } from "@/hooks/useActiveBond";
 import {
   DEFAULT_BOND_SETTINGS,
