@@ -20,6 +20,7 @@ export interface AllowanceResult extends ChatLimitState {
 
 function baseState(now: Date): ChatLimitState {
   return {
+    serverNow: now.toISOString(),
     used: 0,
     limit: DEFAULT_DAILY_MESSAGE_LIMIT,
     remaining: DEFAULT_DAILY_MESSAGE_LIMIT,
@@ -42,7 +43,9 @@ export async function readAllowance(
 ): Promise<AllowanceResult> {
   const now = new Date();
   const since = startOfDay(now);
-  const burstSince = new Date(now.getTime() - CHAT_LIMITS.burstWindowMs);
+  // Read far enough back to reconstruct an active cooldown. Looking back only
+  // one burst window forgets the triggering messages before the cooldown ends.
+  const burstSince = new Date(now.getTime() - CHAT_LIMITS.cooldownMs);
 
   const [limitRes, countRes, burstRes] = await Promise.all([
     supabase.from("account_limits").select("daily_message_limit").eq("user_id", userId).maybeSingle(),
@@ -58,7 +61,8 @@ export async function readAllowance(
       .eq("user_id", userId)
       .eq("role", "user")
       .gte("created_at", burstSince.toISOString())
-      .order("created_at", { ascending: true }),
+      .order("created_at", { ascending: false })
+      .limit(CHAT_LIMITS.burstMessages),
   ]);
 
   const state = baseState(now);
@@ -76,9 +80,11 @@ export async function readAllowance(
 
   const burst = (burstRes.data ?? []) as { created_at: string }[];
   if (burst.length >= CHAT_LIMITS.burstMessages) {
-    const oldest = new Date(burst[0]!.created_at).getTime();
-    const until = oldest + CHAT_LIMITS.cooldownMs;
-    if (until > now.getTime()) {
+    const newest = new Date(burst[0]?.created_at ?? 0).getTime();
+    const oldest = new Date(burst[burst.length - 1]?.created_at ?? 0).getTime();
+    const reachedBurstLimit = newest - oldest <= CHAT_LIMITS.burstWindowMs;
+    const until = newest + CHAT_LIMITS.cooldownMs;
+    if (reachedBurstLimit && until > now.getTime()) {
       state.reason = "burst";
       state.cooldownUntil = new Date(until).toISOString();
       return { ...state, allowed: false, low: state.remaining <= state.limit * 0.2 };

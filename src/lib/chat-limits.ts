@@ -18,6 +18,8 @@ export const CHAT_LIMITS = {
 export type LimitReason = "burst" | "daily" | "provider" | null;
 
 export interface ChatLimitState {
+  /** Server timestamp used to distinguish authoritative availability from the device clock. */
+  serverNow: string;
   used: number;
   limit: number;
   remaining: number;
