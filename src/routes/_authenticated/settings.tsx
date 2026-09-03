@@ -36,6 +36,13 @@ function SettingsPage() {
   const fetchExperience = useServerFn(getBondExperience);
   const saveSettings = useServerFn(updateBondSettings);
   const saveLoveLanguage = useServerFn(updateLoveLanguage);
+  const fetchUsage = useServerFn(getChatUsage);
+
+  const { data: usage } = useQuery({
+    queryKey: ["chat-usage"],
+    queryFn: () => fetchUsage(),
+    refetchOnWindowFocus: true,
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["bond-experience", characterId],
