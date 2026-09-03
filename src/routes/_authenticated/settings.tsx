@@ -266,3 +266,22 @@ function Toggle({
     </div>
   );
 }
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3 text-sm">
+      <span>{label}</span>
+      <span className="tabular-nums text-muted-foreground">{children}</span>
+    </div>
+  );
+}
+
+function Cooldown({ until }: { until: string }) {
+  const { remaining, done } = useCountdown(until);
+  if (done) return <>None</>;
+  return (
+    <>
+      Active · {formatCountdown(remaining)} (around {formatClock(until)})
+    </>
+  );
+}
