@@ -4,6 +4,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { getBondExperience, updateBondSettings, updateLoveLanguage } from "@/lib/bond.functions";
+import { getChatUsage } from "@/lib/character.functions";
+import { UsageMeter, useCountdown } from "@/components/ChatLimit";
+import { formatClock, formatCountdown, type ChatLimitState } from "@/lib/chat-limits";
 import { useActiveBondId } from "@/hooks/useActiveBond";
 import {
   DEFAULT_BOND_SETTINGS,
@@ -33,6 +36,13 @@ function SettingsPage() {
   const fetchExperience = useServerFn(getBondExperience);
   const saveSettings = useServerFn(updateBondSettings);
   const saveLoveLanguage = useServerFn(updateLoveLanguage);
+  const fetchUsage = useServerFn(getChatUsage);
+
+  const { data: usage } = useQuery({
+    queryKey: ["chat-usage"],
+    queryFn: () => fetchUsage(),
+    refetchOnWindowFocus: true,
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["bond-experience", characterId],
@@ -167,6 +177,18 @@ function SettingsPage() {
           </div>
         </Section>
 
+        {usage && (
+          <Section title="Chat usage">
+            <div className="py-3">
+              <UsageMeter state={usage as ChatLimitState} />
+            </div>
+            <Row label="Temporary cooldown">
+              {usage.cooldownUntil ? <Cooldown until={usage.cooldownUntil} /> : "None"}
+            </Row>
+            <Row label="Daily reset">{formatClock(usage.resetAt)}</Row>
+          </Section>
+        )}
+
         <Section title="Interface & accessibility">
           <Toggle
             label="Quick interaction buttons"
@@ -242,5 +264,24 @@ function Toggle({
         />
       </button>
     </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3 text-sm">
+      <span>{label}</span>
+      <span className="tabular-nums text-muted-foreground">{children}</span>
+    </div>
+  );
+}
+
+function Cooldown({ until }: { until: string }) {
+  const { remaining, done } = useCountdown(until);
+  if (done) return <>None</>;
+  return (
+    <>
+      Active · {formatCountdown(remaining)} (around {formatClock(until)})
+    </>
   );
 }
