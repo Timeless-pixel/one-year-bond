@@ -137,6 +137,8 @@ function ChatWindow({
   const [limitInfo, setLimitInfo] = useState<{ retryAt: string | null; reason: string | null } | null>(
     null,
   );
+  const [readyLimit, setReadyLimit] = useState<{ retryAt: string | null; reason: string | null } | null>(null);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
 
   const fetchUsage = useServerFn(getChatUsage);
@@ -252,14 +254,44 @@ function ChatWindow({
 
   const isBusy = status === "submitted" || status === "streaming";
 
+  async function refreshAvailability(options?: { showReady?: boolean }) {
+    if (checkingAvailability) return null;
+    setCheckingAvailability(true);
+    try {
+      const result = await refetchUsage();
+      const current = result.data;
+      if (!current) return null;
+      if (!current.allowed) {
+        const nextLimit = { retryAt: current.cooldownUntil, reason: current.reason };
+        limitRef.current = nextLimit;
+        setLimitInfo(nextLimit);
+        setReadyLimit(null);
+        return current;
+      }
+      limitRef.current = { retryAt: null, reason: null };
+      setLimitInfo(null);
+      if (options?.showReady) {
+        setReadyLimit((previous) => previous ?? { retryAt: current.serverNow, reason: null });
+      } else {
+        setReadyLimit(null);
+      }
+      return current;
+    } finally {
+      setCheckingAvailability(false);
+    }
+  }
+
   async function send(text: string, opts?: { retry?: boolean }) {
     if (!text || sendingRef.current || isBusy) return;
     sendingRef.current = true;
     setErrorMsg(null);
     setErrorCode(null);
-    setLimitInfo(null);
 
     try {
+      // The backend is authoritative. This prevents an optimistic user bubble
+      // from appearing before a still-active cooldown is discovered.
+      const availability = await refreshAvailability();
+      if (!availability || !availability.allowed) return;
       await sendMessage({ text }, opts?.retry ? { body: { retry: true } } : undefined);
     } finally {
       sendingRef.current = false;
@@ -282,7 +314,8 @@ function ChatWindow({
     const last = [...messages].reverse().find((m) => m.role === "user");
     const text = last?.parts.map((p) => (p.type === "text" ? p.text : "")).join("") ?? "";
     if (!text) return;
-    setMessages(messages.filter((m) => m.id !== last!.id));
+    if (!last) return;
+    setMessages(messages.filter((m) => m.id !== last.id));
     await send(text, { retry: true });
   }
 
@@ -318,10 +351,9 @@ function ChatWindow({
 
   const serverLimited = usage && usage.allowed === false ? usage : null;
   const activeLimit =
-    limitInfo ??
     (serverLimited
       ? { retryAt: serverLimited.cooldownUntil, reason: serverLimited.reason }
-      : null);
+      : limitInfo ?? readyLimit);
   const limited = Boolean(activeLimit);
 
   const days = character.journey_start_date ? daysTogether(character.journey_start_date) : null;
@@ -443,13 +475,16 @@ function ChatWindow({
             name={character.name}
             reason={(activeLimit.reason as "burst" | "daily" | "provider" | null) ?? "burst"}
             until={activeLimit.retryAt}
-            busy={isBusy}
-            onReady={() => void refetchUsage()}
+            busy={isBusy || checkingAvailability}
+            readyConfirmed={Boolean(readyLimit) && !serverLimited}
+            onReady={() => void refreshAvailability({ showReady: true })}
             onContinue={() => {
-              setLimitInfo(null);
-              setErrorMsg(null);
-              setErrorCode(null);
-              void refetchUsage();
+              void refreshAvailability().then((current) => {
+                if (!current?.allowed) return;
+                setErrorMsg(null);
+                setErrorCode(null);
+                inputRef.current?.focus();
+              });
             }}
           />
         )}
@@ -476,7 +511,7 @@ function ChatWindow({
             <button
               key={q.label}
               onClick={() => void send(q.send)}
-              disabled={isBusy}
+              disabled={isBusy || limited}
               className="shrink-0 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:text-foreground disabled:opacity-40"
             >
               {q.label}
@@ -508,7 +543,7 @@ function ChatWindow({
               submit();
             }
           }}
-          disabled={limited}
+          disabled={limited || checkingAvailability}
           placeholder={
             limited
               ? "Chat paused — see the timer above"
@@ -520,7 +555,7 @@ function ChatWindow({
         />
         <button
           onClick={submit}
-          disabled={isBusy || limited || !input.trim()}
+          disabled={isBusy || limited || checkingAvailability || !input.trim()}
           className="btn-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-xl disabled:opacity-50"
         >
           <Send className="h-4 w-4" />

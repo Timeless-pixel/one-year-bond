@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import {
   formatClock,
@@ -29,6 +29,7 @@ export function CooldownCard({
   onReady,
   onContinue,
   busy,
+  readyConfirmed = false,
 }: {
   name: string;
   reason: LimitReason;
@@ -36,15 +37,20 @@ export function CooldownCard({
   onReady?: () => void;
   onContinue: () => void;
   busy?: boolean;
+  readyConfirmed?: boolean;
 }) {
   const { remaining, done } = useCountdown(until);
   const [open, setOpen] = useState(false);
+  const notifiedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (done && onReady) onReady();
-  }, [done, onReady]);
+    if (!done || !until || !onReady || notifiedFor.current === until) return;
+    notifiedFor.current = until;
+    onReady();
+  }, [done, until, onReady]);
 
-  const ready = !until || done;
+  const ready = readyConfirmed;
+  const checking = done && !readyConfirmed;
 
   return (
     <div
@@ -58,10 +64,14 @@ export function CooldownCard({
       <div className="relative">
         <div className="text-3xl">{ready ? "✨" : "💜"}</div>
         <h2 className="mt-3 text-lg font-medium">
-          {ready ? `${name} is ready to talk again.` : limitHeadline(reason, name)}
+          {ready
+            ? `${name} is ready to talk again.`
+            : checking
+              ? "Checking chat availability…"
+              : limitHeadline(reason, name)}
         </h2>
 
-        {!ready && (
+        {!ready && !checking && (
           <>
             <p className="mt-2 text-sm text-muted-foreground">{limitBody(reason)}</p>
             <div
@@ -82,7 +92,7 @@ export function CooldownCard({
           disabled={!ready || busy}
           className="btn-primary mt-5 rounded-xl px-5 py-2 text-sm disabled:opacity-40"
         >
-          {ready ? "Continue chat" : "Waiting…"}
+          {ready ? "Continue chat" : checking ? "Checking…" : "Waiting…"}
         </button>
 
         <button
