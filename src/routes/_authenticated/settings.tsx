@@ -177,6 +177,18 @@ function SettingsPage() {
           </div>
         </Section>
 
+        {usage && (
+          <Section title="Chat usage">
+            <div className="py-3">
+              <UsageMeter state={usage as ChatLimitState} />
+            </div>
+            <Row label="Temporary cooldown">
+              {usage.cooldownUntil ? <Cooldown until={usage.cooldownUntil} /> : "None"}
+            </Row>
+            <Row label="Daily reset">{formatClock(usage.resetAt)}</Row>
+          </Section>
+        )}
+
         <Section title="Interface & accessibility">
           <Toggle
             label="Quick interaction buttons"
