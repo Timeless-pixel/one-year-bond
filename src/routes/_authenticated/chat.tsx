@@ -565,6 +565,17 @@ function ChatWindow({
           </div>
         )}
 
+        {checkingAvailability && !limited && (
+          <div
+            className="mx-auto flex items-center gap-2 py-3 text-xs text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="h-3 w-3 animate-spin rounded-full border border-primary border-t-transparent" />
+            Checking chat availability…
+          </div>
+        )}
+
       </div>
 
       {settings.quickButtons && (
