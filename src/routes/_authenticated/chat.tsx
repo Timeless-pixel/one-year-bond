@@ -9,12 +9,13 @@ import { getBondExperience } from "@/lib/bond.functions";
 import { AppShell } from "@/components/AppShell";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Send } from "lucide-react";
+import { AlertCircle, Send } from "lucide-react";
 import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, isRomanticBond, DEFAULT_BOND_SETTINGS, type BondSettings, type Expression } from "@/lib/emotion-shared";
 import { parseScene, splitActions, quickInteractions, daysTogether, journeyLabel } from "@/lib/scene-shared";
 import { getChatUsage } from "@/lib/character.functions";
 import { CooldownCard, UsageMeter } from "@/components/ChatLimit";
 import type { ChatLimitState } from "@/lib/chat-limits";
+import { Button } from "@/components/ui/button";
 import {
   decodeChatError,
   isLimitError,
@@ -84,7 +85,24 @@ interface CharacterRow {
 }
 
 
-const REQUEST_TIMEOUT_MS = 60_000;
+const AVAILABILITY_TIMEOUT_MS = 10_000;
+
+type AvailabilityStatus = "checking" | "available" | "cooldown" | "error";
+
+async function withAvailabilityTimeout<T>(request: Promise<T>): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error("Chat availability request timed out")),
+      AVAILABILITY_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 /** supabase.auth.getSession() can hang on a stuck lock — never block the send on it. */
 async function getAccessToken(): Promise<string | undefined> {
@@ -138,15 +156,29 @@ function ChatWindow({
     null,
   );
   const [readyLimit, setReadyLimit] = useState<{ retryAt: string | null; reason: string | null } | null>(null);
-  const [checkingAvailability, setCheckingAvailability] = useState(false);
+  const availabilityRequestRef = useRef(false);
+  const [availabilityStatus, setAvailabilityStatus] = useState<AvailabilityStatus>("checking");
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [showUsage, setShowUsage] = useState(false);
 
   const fetchUsage = useServerFn(getChatUsage);
-  const { data: usage, refetch: refetchUsage } = useQuery({
+  const { data: usage, error: usageError, refetch: refetchUsage } = useQuery({
     queryKey: ["chat-usage"],
-    queryFn: () => fetchUsage(),
+    queryFn: () => withAvailabilityTimeout(fetchUsage()),
     refetchOnWindowFocus: true,
+    retry: false,
   });
+
+  useEffect(() => {
+    if (usageError) {
+      setAvailabilityStatus("error");
+      setAvailabilityError("Unable to check chat availability.");
+      return;
+    }
+    if (!usage) return;
+    setAvailabilityStatus(usage.allowed ? "available" : "cooldown");
+    setAvailabilityError(null);
+  }, [usage, usageError]);
 
 
   const fetchExperience = useServerFn(getBondExperience);
@@ -166,13 +198,8 @@ function ChatWindow({
           const headers = new Headers(init?.headers);
           if (token) headers.set("Authorization", `Bearer ${token}`);
 
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-          if (init?.signal) {
-            init.signal.addEventListener("abort", () => controller.abort(), { once: true });
-          }
           try {
-            const res = await fetch(input, { ...init, headers, signal: controller.signal });
+            const res = await fetch(input, { ...init, headers });
             if (!res.ok) {
               const detail = await res.text().catch(() => "");
               let code = decodeChatError(detail);
@@ -208,7 +235,8 @@ function ChatWindow({
             }
             return res;
           } finally {
-            clearTimeout(timeout);
+            // AI generation has no artificial timeout; the SDK signal still
+            // supports an explicit user cancellation.
           }
         },
       }),
@@ -253,31 +281,44 @@ function ChatWindow({
   }, [status]);
 
   const isBusy = status === "submitted" || status === "streaming";
+  const checkingAvailability = availabilityStatus === "checking";
 
   async function refreshAvailability(options?: { showReady?: boolean }) {
-    if (checkingAvailability) return null;
-    setCheckingAvailability(true);
+    if (availabilityRequestRef.current) return null;
+    availabilityRequestRef.current = true;
+    setAvailabilityStatus("checking");
+    setAvailabilityError(null);
     try {
-      const result = await refetchUsage();
+      const result = await withAvailabilityTimeout(refetchUsage());
       const current = result.data;
-      if (!current) return null;
+      if (result.error) throw result.error;
+      if (!current) throw new Error("Chat availability returned no result");
       if (!current.allowed) {
         const nextLimit = { retryAt: current.cooldownUntil, reason: current.reason };
         limitRef.current = nextLimit;
         setLimitInfo(nextLimit);
         setReadyLimit(null);
+        setAvailabilityStatus("cooldown");
         return current;
       }
       limitRef.current = { retryAt: null, reason: null };
       setLimitInfo(null);
+      setAvailabilityStatus("available");
       if (options?.showReady) {
         setReadyLimit((previous) => previous ?? { retryAt: current.serverNow, reason: null });
       } else {
         setReadyLimit(null);
       }
       return current;
+    } catch {
+      limitRef.current = { retryAt: null, reason: null };
+      setLimitInfo(null);
+      setReadyLimit(null);
+      setAvailabilityStatus("error");
+      setAvailabilityError("Unable to check chat availability.");
+      return null;
     } finally {
-      setCheckingAvailability(false);
+      availabilityRequestRef.current = false;
     }
   }
 
@@ -349,7 +390,11 @@ function ChatWindow({
     [experience?.level?.index, character.relationship_type, liveExpression],
   );
 
-  const serverLimited = usage && usage.allowed === false ? usage : null;
+  // React Query retains the last successful value after a failed refetch.
+  // Only treat that cached limit as active while the state machine confirms
+  // cooldown; otherwise a timeout would keep the old card stuck on Checking.
+  const serverLimited =
+    availabilityStatus === "cooldown" && usage && usage.allowed === false ? usage : null;
   const activeLimit =
     (serverLimited
       ? { retryAt: serverLimited.cooldownUntil, reason: serverLimited.reason }
@@ -503,6 +548,34 @@ function ChatWindow({
           </div>
         )}
 
+        {availabilityStatus === "error" && availabilityError && !limited && (
+          <div className="glass mx-auto flex w-full max-w-sm flex-col items-center rounded-2xl px-5 py-5 text-center">
+            <AlertCircle className="h-6 w-6 text-destructive" aria-hidden="true" />
+            <h2 className="mt-3 text-sm font-medium">{availabilityError}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Please try again.</p>
+            <Button
+              type="button"
+              size="sm"
+              className="mt-4"
+              disabled={checkingAvailability}
+              onClick={() => void refreshAvailability()}
+            >
+              Try Again
+            </Button>
+          </div>
+        )}
+
+        {checkingAvailability && !limited && (
+          <div
+            className="mx-auto flex items-center gap-2 py-3 text-xs text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="h-3 w-3 animate-spin rounded-full border border-primary border-t-transparent" />
+            Checking chat availability…
+          </div>
+        )}
+
       </div>
 
       {settings.quickButtons && (
@@ -543,7 +616,7 @@ function ChatWindow({
               submit();
             }
           }}
-          disabled={limited || checkingAvailability}
+          disabled={limited || checkingAvailability || availabilityStatus === "error"}
           placeholder={
             limited
               ? "Chat paused — see the timer above"
@@ -555,7 +628,13 @@ function ChatWindow({
         />
         <button
           onClick={submit}
-          disabled={isBusy || limited || checkingAvailability || !input.trim()}
+          disabled={
+            isBusy ||
+            limited ||
+            checkingAvailability ||
+            availabilityStatus === "error" ||
+            !input.trim()
+          }
           className="btn-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-xl disabled:opacity-50"
         >
           <Send className="h-4 w-4" />
