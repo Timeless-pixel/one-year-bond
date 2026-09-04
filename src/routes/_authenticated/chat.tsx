@@ -390,7 +390,11 @@ function ChatWindow({
     [experience?.level?.index, character.relationship_type, liveExpression],
   );
 
-  const serverLimited = usage && usage.allowed === false ? usage : null;
+  // React Query retains the last successful value after a failed refetch.
+  // Only treat that cached limit as active while the state machine confirms
+  // cooldown; otherwise a timeout would keep the old card stuck on Checking.
+  const serverLimited =
+    availabilityStatus === "cooldown" && usage && usage.allowed === false ? usage : null;
   const activeLimit =
     (serverLimited
       ? { retryAt: serverLimited.cooldownUntil, reason: serverLimited.reason }
