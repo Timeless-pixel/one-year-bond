@@ -486,6 +486,7 @@ export type Database = {
           character_id: string
           content: string
           created_at: string
+          edited_at: string | null
           id: string
           role: string
           scenario_session_id: string | null
@@ -495,6 +496,7 @@ export type Database = {
           character_id: string
           content: string
           created_at?: string
+          edited_at?: string | null
           id?: string
           role: string
           scenario_session_id?: string | null
@@ -504,6 +506,7 @@ export type Database = {
           character_id?: string
           content?: string
           created_at?: string
+          edited_at?: string | null
           id?: string
           role?: string
           scenario_session_id?: string | null
