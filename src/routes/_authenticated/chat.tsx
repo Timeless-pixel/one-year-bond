@@ -4,17 +4,23 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { useActiveBondId } from "@/hooks/useActiveBond";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getMyCharacter, getMessages } from "@/lib/character.functions";
+import { getMyCharacter, getMessages, updateMessage } from "@/lib/character.functions";
 import { getBondExperience } from "@/lib/bond.functions";
 import { AppShell } from "@/components/AppShell";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertCircle, Send } from "lucide-react";
+import { AlertCircle, Check, Copy, MoreHorizontal, Pencil, RefreshCw, Send, X } from "lucide-react";
 import { parseExpression, EXPRESSION_EMOJI, EXPRESSION_GLOW, isRomanticBond, DEFAULT_BOND_SETTINGS, type BondSettings, type Expression } from "@/lib/emotion-shared";
 import { parseScene, splitActions, quickInteractions, daysTogether, journeyLabel } from "@/lib/scene-shared";
 import { getChatUsage } from "@/lib/character.functions";
 import { CooldownCard, UsageMeter } from "@/components/ChatLimit";
 import type { ChatLimitState } from "@/lib/chat-limits";
+import {
+  CHAT_AVAILABILITY_TIMEOUT_MS,
+  resolveAvailability,
+  type AvailabilityState,
+  type ChatUsage,
+} from "@/lib/chat-availability";
 import { Button } from "@/components/ui/button";
 import {
   decodeChatError,
@@ -85,25 +91,6 @@ interface CharacterRow {
 }
 
 
-const AVAILABILITY_TIMEOUT_MS = 10_000;
-
-type AvailabilityStatus = "checking" | "available" | "cooldown" | "error";
-
-async function withAvailabilityTimeout<T>(request: Promise<T>): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(
-      () => reject(new Error("Chat availability request timed out")),
-      AVAILABILITY_TIMEOUT_MS,
-    );
-  });
-  try {
-    return await Promise.race([request, timeout]);
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
-
 /** supabase.auth.getSession() can hang on a stuck lock — never block the send on it. */
 async function getAccessToken(): Promise<string | undefined> {
   try {
@@ -129,7 +116,13 @@ function ChatWindow({
   initialMessages,
 }: {
   character: CharacterRow;
-  initialMessages: { id: string; role: string; content: string }[];
+  initialMessages: {
+    id: string;
+    role: string;
+    content: string;
+    created_at?: string;
+    edited_at?: string | null;
+  }[];
 }) {
   const seed: UIMessage[] = useMemo(
     () =>
@@ -152,33 +145,29 @@ function ChatWindow({
     retryAt: null,
     reason: null,
   });
-  const [limitInfo, setLimitInfo] = useState<{ retryAt: string | null; reason: string | null } | null>(
-    null,
-  );
-  const [readyLimit, setReadyLimit] = useState<{ retryAt: string | null; reason: string | null } | null>(null);
-  const availabilityRequestRef = useRef(false);
-  const [availabilityStatus, setAvailabilityStatus] = useState<AvailabilityStatus>("checking");
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const availabilityRequestIdRef = useRef(0);
+  const [availability, setAvailability] = useState<AvailabilityState>({
+    status: "checking",
+    requestId: 0,
+    usage: null,
+  });
   const [showUsage, setShowUsage] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [messageMeta, setMessageMeta] = useState(() =>
+    new Map(
+      initialMessages.map((message) => [
+        message.id,
+        { createdAt: message.created_at ?? null, editedAt: message.edited_at ?? null },
+      ]),
+    ),
+  );
 
   const fetchUsage = useServerFn(getChatUsage);
-  const { data: usage, error: usageError, refetch: refetchUsage } = useQuery({
-    queryKey: ["chat-usage"],
-    queryFn: () => withAvailabilityTimeout(fetchUsage()),
-    refetchOnWindowFocus: true,
-    retry: false,
-  });
-
-  useEffect(() => {
-    if (usageError) {
-      setAvailabilityStatus("error");
-      setAvailabilityError("Unable to check chat availability.");
-      return;
-    }
-    if (!usage) return;
-    setAvailabilityStatus(usage.allowed ? "available" : "cooldown");
-    setAvailabilityError(null);
-  }, [usage, usageError]);
+  const editMessage = useServerFn(updateMessage);
 
 
   const fetchExperience = useServerFn(getBondExperience);
@@ -254,11 +243,7 @@ function ChatWindow({
       setErrorCode(code);
       setErrorMsg(chatErrorMessage(code, character.name));
       if (isLimitError(code)) {
-        setLimitInfo({
-          retryAt: limitRef.current.retryAt,
-          reason: limitRef.current.reason ?? (code === "allowance" ? "daily" : "burst"),
-        });
-        void refetchUsage();
+        void refreshAvailability();
       }
     },
 
@@ -281,49 +266,59 @@ function ChatWindow({
   }, [status]);
 
   const isBusy = status === "submitted" || status === "streaming";
-  const checkingAvailability = availabilityStatus === "checking";
+  const checkingAvailability = availability.status === "checking";
+  const usage = availability.usage;
 
-  async function refreshAvailability(options?: { showReady?: boolean }) {
-    if (availabilityRequestRef.current) return null;
-    availabilityRequestRef.current = true;
-    setAvailabilityStatus("checking");
-    setAvailabilityError(null);
+  async function refreshAvailability(): Promise<ChatUsage | null> {
+    const requestId = ++availabilityRequestIdRef.current;
+    console.log("[CHAT AVAILABILITY] START", { requestId });
+    setAvailability((current) => ({ status: "checking", requestId, usage: current.usage }));
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      const result = await withAvailabilityTimeout(refetchUsage());
-      const current = result.data;
-      if (result.error) throw result.error;
-      if (!current) throw new Error("Chat availability returned no result");
-      if (!current.allowed) {
-        const nextLimit = { retryAt: current.cooldownUntil, reason: current.reason };
-        limitRef.current = nextLimit;
-        setLimitInfo(nextLimit);
-        setReadyLimit(null);
-        setAvailabilityStatus("cooldown");
-        return current;
-      }
-      limitRef.current = { retryAt: null, reason: null };
-      setLimitInfo(null);
-      setAvailabilityStatus("available");
-      if (options?.showReady) {
-        setReadyLimit((previous) => previous ?? { retryAt: current.serverNow, reason: null });
-      } else {
-        setReadyLimit(null);
-      }
+      console.log("[CHAT AVAILABILITY] getChatUsage started", { requestId });
+      const current = await Promise.race([
+        fetchUsage(),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            console.log("[CHAT AVAILABILITY] timeout", { requestId });
+            reject(new Error("Chat availability request timed out"));
+          }, CHAT_AVAILABILITY_TIMEOUT_MS);
+        }),
+      ]);
+      if (requestId !== availabilityRequestIdRef.current) return null;
+      console.log("[CHAT AVAILABILITY] getChatUsage resolved", current);
+      console.log("[CHAT AVAILABILITY] cooldownUntil", current.cooldownUntil);
+      const next = resolveAvailability(current, requestId);
+      setAvailability(next);
+      console.log("[CHAT AVAILABILITY] final status", next.status);
       return current;
-    } catch {
-      limitRef.current = { retryAt: null, reason: null };
-      setLimitInfo(null);
-      setReadyLimit(null);
-      setAvailabilityStatus("error");
-      setAvailabilityError("Unable to check chat availability.");
+    } catch (error) {
+      if (requestId !== availabilityRequestIdRef.current) return null;
+      console.log("[CHAT AVAILABILITY] getChatUsage failed", error);
+      setAvailability({
+        status: "error",
+        requestId,
+        usage: null,
+        message: "Unable to check chat availability.",
+      });
+      console.log("[CHAT AVAILABILITY] final status", "error");
       return null;
     } finally {
-      availabilityRequestRef.current = false;
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
+  useEffect(() => {
+    void refreshAvailability();
+    return () => {
+      availabilityRequestIdRef.current += 1;
+    };
+    // The authenticated chat window mounts once per bond.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [character.id]);
+
   async function send(text: string, opts?: { retry?: boolean }) {
-    if (!text || sendingRef.current || isBusy) return;
+    if (!text || sendingRef.current || isBusy || availability.status !== "available") return;
     sendingRef.current = true;
     setErrorMsg(null);
     setErrorCode(null);
@@ -332,7 +327,9 @@ function ChatWindow({
       // The backend is authoritative. This prevents an optimistic user bubble
       // from appearing before a still-active cooldown is discovered.
       const availability = await refreshAvailability();
-      if (!availability || !availability.allowed) return;
+      if (!availability) return;
+      const confirmed = resolveAvailability(availability, availabilityRequestIdRef.current);
+      if (confirmed.status !== "available") return;
       await sendMessage({ text }, opts?.retry ? { body: { retry: true } } : undefined);
     } finally {
       sendingRef.current = false;
@@ -349,7 +346,6 @@ function ChatWindow({
   async function retry() {
     setErrorMsg(null);
     setErrorCode(null);
-    setLimitInfo(null);
     // Regenerate from the message that is already on screen and already saved:
     // the server skips re-recording it when `retry` is set.
     const last = [...messages].reverse().find((m) => m.role === "user");
@@ -358,6 +354,68 @@ function ChatWindow({
     if (!last) return;
     setMessages(messages.filter((m) => m.id !== last.id));
     await send(text, { retry: true });
+  }
+
+  function messageText(message: UIMessage) {
+    return message.parts.map((part) => (part.type === "text" ? part.text : "")).join("");
+  }
+
+  function startEditing(message: UIMessage) {
+    setEditingId(message.id);
+    setEditText(messageText(message));
+    setEditError(null);
+    setOpenMenuId(null);
+  }
+
+  async function saveEdit(messageId: string) {
+    const content = editText.trim();
+    if (!content || savingEdit) return;
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const updated = await editMessage({ data: { id: messageId, content } });
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? { ...message, parts: [{ type: "text" as const, text: updated.content }] }
+            : message,
+        ),
+      );
+      setMessageMeta((current) => {
+        const next = new Map(current);
+        const previous = next.get(messageId);
+        next.set(messageId, {
+          createdAt: updated.created_at ?? previous?.createdAt ?? null,
+          editedAt: updated.edited_at,
+        });
+        return next;
+      });
+      setEditingId(null);
+      setEditText("");
+    } catch {
+      setEditError("Unable to save this edit. Please try again.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function staleReplyFor(index: number) {
+    const message = messages[index];
+    if (!message || message.role !== "assistant" || index === 0) return null;
+    const previous = messages[index - 1];
+    if (!previous || previous.role !== "user") return null;
+    const editedAt = messageMeta.get(previous.id)?.editedAt;
+    const assistantCreatedAt = messageMeta.get(message.id)?.createdAt;
+    if (!editedAt || !assistantCreatedAt) return null;
+    return new Date(assistantCreatedAt).getTime() < new Date(editedAt).getTime() ? previous : null;
+  }
+
+  async function regenerateEdited(userMessage: UIMessage) {
+    if (availability.status !== "available" || isBusy) return;
+    const targetIndex = messages.findIndex((message) => message.id === userMessage.id);
+    if (targetIndex < 0) return;
+    setMessages(messages.slice(0, targetIndex));
+    await send(messageText(userMessage), { retry: true });
   }
 
   // Auto-generate first message if empty
