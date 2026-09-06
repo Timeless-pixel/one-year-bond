@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { MAX_ACTIVE_BONDS } from "@/lib/bond-shared";
 import { resolveCharacter, milestoneTitle, milestoneCopy } from "@/lib/bond.server";
+import { CHAT_LIMITS } from "@/lib/chat-limits";
 
 const CreateCharacterInput = z.object({
   name: z.string().min(1).max(60),
@@ -172,7 +173,7 @@ export const getMessages = createServerFn({ method: "GET" })
     if (!c) return { messages: [], hasMore: false };
     let q = context.supabase
       .from("messages")
-      .select("id, role, content, created_at")
+      .select("id, role, content, created_at, edited_at")
       .eq("user_id", context.userId)
       .eq("character_id", c.id)
       .order("created_at", { ascending: false })
@@ -191,6 +192,31 @@ export const getChatUsage = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { readAllowance } = await import("@/lib/allowance.server");
     return readAllowance(context.supabase, context.userId);
+  });
+
+export const updateMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        content: z.string().trim().min(1).max(CHAT_LIMITS.maxMessageLength),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const editedAt = new Date().toISOString();
+    const { data: message, error } = await context.supabase
+      .from("messages")
+      .update({ content: data.content, edited_at: editedAt })
+      .eq("id", data.id)
+      .eq("user_id", context.userId)
+      .eq("role", "user")
+      .select("id, role, content, created_at, edited_at")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!message) throw new Error("Message not found or cannot be edited.");
+    return message;
   });
 
 

@@ -29,7 +29,6 @@ export function CooldownCard({
   onReady,
   onContinue,
   busy,
-  readyConfirmed = false,
 }: {
   name: string;
   reason: LimitReason;
@@ -37,7 +36,6 @@ export function CooldownCard({
   onReady?: () => void;
   onContinue: () => void;
   busy?: boolean;
-  readyConfirmed?: boolean;
 }) {
   const { remaining, done } = useCountdown(until);
   const [open, setOpen] = useState(false);
@@ -49,9 +47,6 @@ export function CooldownCard({
     onReady();
   }, [done, until, onReady]);
 
-  const ready = readyConfirmed;
-  const checking = done && !readyConfirmed;
-
   return (
     <div
       className="glass relative mx-auto w-full max-w-sm overflow-hidden rounded-3xl px-6 py-7 text-center"
@@ -62,16 +57,14 @@ export function CooldownCard({
         style={{ background: "var(--gradient-primary)" }}
       />
       <div className="relative">
-        <div className="text-3xl">{ready ? "✨" : "💜"}</div>
+        <div className="text-3xl">{done ? "✨" : "💜"}</div>
         <h2 className="mt-3 text-lg font-medium">
-          {ready
+          {done
             ? `${name} is ready to talk again.`
-            : checking
-              ? "Checking chat availability…"
-              : limitHeadline(reason, name)}
+            : limitHeadline(reason, name)}
         </h2>
 
-        {!ready && !checking && (
+        {!done && (
           <>
             <p className="mt-2 text-sm text-muted-foreground">{limitBody(reason)}</p>
             <div
@@ -89,10 +82,10 @@ export function CooldownCard({
 
         <button
           onClick={onContinue}
-          disabled={!ready || busy}
+          disabled={!done || busy}
           className="btn-primary mt-5 rounded-xl px-5 py-2 text-sm disabled:opacity-40"
         >
-          {ready ? "Continue chat" : checking ? "Checking…" : "Waiting…"}
+          {done ? "Continue chat" : "Waiting…"}
         </button>
 
         <button
