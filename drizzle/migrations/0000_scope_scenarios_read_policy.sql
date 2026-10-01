@@ -1,0 +1,2 @@
+DROP POLICY IF EXISTS "Signed-in users can read scenarios" ON public.scenarios;
+CREATE POLICY "Authenticated users can read the scenario catalog" ON public.scenarios FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL);
