@@ -448,15 +448,12 @@ function ChatWindow({
     [experience?.level?.index, character.relationship_type, liveExpression],
   );
 
-  // React Query retains the last successful value after a failed refetch.
-  // Only treat that cached limit as active while the state machine confirms
-  // cooldown; otherwise a timeout would keep the old card stuck on Checking.
-  const serverLimited =
-    availabilityStatus === "cooldown" && usage && usage.allowed === false ? usage : null;
+  const availabilityStatus = availability.status;
+  const availabilityError = availability.status === "error" ? availability.message : null;
   const activeLimit =
-    (serverLimited
-      ? { retryAt: serverLimited.cooldownUntil, reason: serverLimited.reason }
-      : limitInfo ?? readyLimit);
+    availability.status === "cooldown"
+      ? { retryAt: availability.cooldownUntil, reason: availability.reason }
+      : null;
   const limited = Boolean(activeLimit);
 
   const days = character.journey_start_date ? daysTogether(character.journey_start_date) : null;
@@ -579,8 +576,6 @@ function ChatWindow({
             reason={(activeLimit.reason as "burst" | "daily" | "provider" | null) ?? "burst"}
             until={activeLimit.retryAt}
             busy={isBusy || checkingAvailability}
-            readyConfirmed={Boolean(readyLimit) && !serverLimited}
-            onReady={() => void refreshAvailability({ showReady: true })}
             onContinue={() => {
               void refreshAvailability().then((current) => {
                 if (!current?.allowed) return;
