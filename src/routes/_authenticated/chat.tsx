@@ -246,8 +246,23 @@ function ChatWindow({
         void refreshAvailability();
       }
     },
-
+    onFinish: () => {
+      void refreshUsageQuietly();
+    },
   });
+
+  // Updates the "messages left" counter after a reply without flipping the
+  // UI back to "checking". Stale results are ignored via the request id.
+  async function refreshUsageQuietly() {
+    const requestId = availabilityRequestIdRef.current;
+    try {
+      const current = await fetchUsage();
+      if (requestId !== availabilityRequestIdRef.current) return;
+      setAvailability(resolveAvailability(current, requestId));
+    } catch {
+      // Keep the existing state; the next explicit check will retry.
+    }
+  }
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
