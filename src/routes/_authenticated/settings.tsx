@@ -1,20 +1,21 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
-import { getBondExperience, updateBondSettings, updateLoveLanguage } from "@/lib/bond.functions";
+import { getBondExperience, updateBondSettings, updateLoveLanguage, deleteBond } from "@/lib/bond.functions";
 import { getChatUsage } from "@/lib/character.functions";
 import { UsageMeter, useCountdown } from "@/components/ChatLimit";
 import { formatClock, formatCountdown, type ChatLimitState } from "@/lib/chat-limits";
-import { useActiveBondId } from "@/hooks/useActiveBond";
+import { useActiveBondId, setActiveBondId } from "@/hooks/useActiveBond";
 import {
   DEFAULT_BOND_SETTINGS,
   LOVE_LANGUAGES,
   type ActionIntensity,
   type BondSettings,
 } from "@/lib/emotion-shared";
-import { journeyLabel, nextMilestone } from "@/lib/scene-shared";
+import { journeyLabel } from "@/lib/scene-shared";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
@@ -78,8 +79,6 @@ function SettingsPage() {
     );
   }
 
-  const next = nextMilestone(data.day);
-
   return (
     <AppShell>
       <div className="mx-auto max-w-2xl px-6 py-10">
@@ -88,7 +87,6 @@ function SettingsPage() {
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {journeyLabel(data.day)}
-          {next ? ` · next moment in ${next.away} day${next.away === 1 ? "" : "s"}` : ""}
         </p>
 
         <Section title="Presence">
@@ -221,8 +219,110 @@ function SettingsPage() {
             </ul>
           </Section>
         )}
+        {characterId && <ManageBond characterId={characterId} name={data.name} />}
       </div>
     </AppShell>
+  );
+}
+
+function ManageBond({ characterId, name }: { characterId: string; name: string }) {
+  const remove = useServerFn(deleteBond);
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [confirm, setConfirm] = useState<"delete" | "replace" | null>(null);
+
+  const mut = useMutation({
+    mutationFn: (mode: "delete" | "replace") =>
+      remove({ data: { characterId } }).then(() => mode),
+    onSuccess: async (mode) => {
+      setActiveBondId(null);
+      qc.clear();
+      setConfirm(null);
+      if (mode === "replace") {
+        toast.success(`${name} was deleted. Let's create your new bond.`);
+        navigate({ to: "/create", replace: true });
+      } else {
+        toast.success(`${name} was permanently deleted.`);
+        navigate({ to: "/bonds", replace: true });
+      }
+    },
+    onError: (e: Error) => toast.error(e.message || "Something went wrong. Please try again."),
+  });
+
+  const copy =
+    confirm === "replace"
+      ? {
+          title: "Replace Bond?",
+          body: "Your current Bond will be permanently deleted, including its conversations, memories, relationship progress, and settings. You'll then be able to create a completely new Bond from scratch.",
+          action: "Replace Bond",
+          busy: "Replacing…",
+        }
+      : {
+          title: "Delete Bond?",
+          body: "Are you sure you want to permanently delete this Bond? All conversations, memories, relationship progress, settings, and associated data will be deleted.",
+          action: "Delete Bond",
+          busy: "Deleting…",
+        };
+
+  return (
+    <>
+      <Section title="Manage bond">
+        <div className="flex items-start justify-between gap-4 py-3">
+          <div>
+            <div className="text-sm">Replace bond</div>
+            <p className="text-xs text-muted-foreground">Delete {name} and start a brand-new bond from scratch.</p>
+          </div>
+          <button
+            onClick={() => setConfirm("replace")}
+            className="shrink-0 rounded-xl border border-destructive/50 px-3 py-1.5 text-xs text-destructive transition hover:bg-destructive/10"
+          >
+            Replace
+          </button>
+        </div>
+        <div className="flex items-start justify-between gap-4 py-3">
+          <div>
+            <div className="text-sm">Delete bond</div>
+            <p className="text-xs text-muted-foreground">Permanently remove {name} and everything you shared.</p>
+          </div>
+          <button
+            onClick={() => setConfirm("delete")}
+            className="shrink-0 rounded-xl bg-destructive px-3 py-1.5 text-xs text-destructive-foreground transition hover:opacity-90"
+          >
+            Delete
+          </button>
+        </div>
+      </Section>
+
+      {confirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+          <div
+            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+            onClick={() => !mut.isPending && setConfirm(null)}
+          />
+          <div role="alertdialog" aria-modal className="glass relative w-full max-w-md rounded-3xl p-7">
+            <h3 className="text-2xl">{copy.title}</h3>
+            <p className="mt-3 text-sm text-muted-foreground">{copy.body}</p>
+            <p className="mt-3 text-sm font-medium text-destructive">This action cannot be undone.</p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row">
+              <button
+                onClick={() => setConfirm(null)}
+                disabled={mut.isPending}
+                className="flex-1 rounded-xl border border-border px-4 py-3 text-sm text-muted-foreground disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => !mut.isPending && mut.mutate(confirm)}
+                disabled={mut.isPending}
+                className="flex-1 rounded-xl bg-destructive px-4 py-3 text-sm text-destructive-foreground disabled:opacity-60"
+              >
+                {mut.isPending ? copy.busy : copy.action}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
