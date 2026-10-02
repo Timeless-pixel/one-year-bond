@@ -445,16 +445,23 @@ export const checkMilestones = createServerFn({ method: "POST" })
       Math.floor((Date.now() - new Date(character.journey_start_date).getTime()) / 86_400_000) + 1,
     );
     const eligible = [1, 7, 30, 60, 100, 180, 250, 365].filter((d) => d <= day);
-    if (!eligible.length) return { created: 0 };
     const { data: existing } = await context.supabase
       .from("milestones")
-      .select("day")
+      .select("day, kind")
       .eq("user_id", context.userId)
-      .eq("character_id", character.id)
-      .eq("kind", "day")
-      .in("day", eligible);
-    const existingDays = new Set((existing ?? []).map((m) => m.day));
-    const toCreate = eligible
+      .eq("character_id", character.id);
+    const existingDays = new Set(
+      (existing ?? []).filter((m) => m.kind === "day").map((m) => m.day),
+    );
+    const existingKinds = new Set((existing ?? []).map((m) => m.kind));
+    const toCreate: Array<{
+      user_id: string;
+      character_id: string;
+      day: number;
+      kind: string;
+      title: string;
+      description: string;
+    }> = eligible
       .filter((d) => !existingDays.has(d))
       .map((d) => ({
         user_id: context.userId,
@@ -464,6 +471,57 @@ export const checkMilestones = createServerFn({ method: "POST" })
         title: milestoneTitle(d),
         description: milestoneCopy(d, character.name),
       }));
+
+    const dayOf = (iso: string) =>
+      Math.max(
+        1,
+        Math.floor(
+          (new Date(iso).getTime() - new Date(character.journey_start_date).getTime()) / 86_400_000,
+        ) + 1,
+      );
+
+    // Real "firsts", derived only from rows that actually exist.
+    if (!existingKinds.has("first_message")) {
+      const { data: first } = await context.supabase
+        .from("messages")
+        .select("created_at")
+        .eq("user_id", context.userId)
+        .eq("character_id", character.id)
+        .eq("role", "user")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (first)
+        toCreate.push({
+          user_id: context.userId,
+          character_id: character.id,
+          day: dayOf(first.created_at),
+          kind: "first_message",
+          title: "Your first conversation",
+          description: `The first words you shared with ${character.name}.`,
+        });
+    }
+    if (!existingKinds.has("first_memory")) {
+      const { data: first } = await context.supabase
+        .from("memories")
+        .select("created_at")
+        .eq("user_id", context.userId)
+        .eq("character_id", character.id)
+        .neq("category", "character")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (first)
+        toCreate.push({
+          user_id: context.userId,
+          character_id: character.id,
+          day: dayOf(first.created_at),
+          kind: "first_memory",
+          title: "Your first saved memory",
+          description: `${character.name} started holding on to the things you share.`,
+        });
+    }
+
     if (!toCreate.length) return { created: 0 };
     await context.supabase.from("milestones").insert(toCreate);
     return { created: toCreate.length };
