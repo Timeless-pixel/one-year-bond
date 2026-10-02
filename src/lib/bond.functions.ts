@@ -639,3 +639,52 @@ export const updateLoveLanguage = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/**
+ * Permanently delete a bond and every row that belongs to it. Children are
+ * removed first because not every foreign key cascades.
+ */
+export const deleteBond = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ characterId: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const sb = context.supabase;
+    const uid = context.userId;
+    const { data: owned, error: ownErr } = await sb
+      .from("characters")
+      .select("id")
+      .eq("id", data.characterId)
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (ownErr) throw new Error("Couldn't reach your bond. Please try again.");
+    if (!owned) return { ok: true, alreadyGone: true };
+
+    const tables = [
+      "messages",
+      "keepsakes",
+      "story_events",
+      "scenario_sessions",
+      "memories",
+      "milestones",
+      "conversation_summaries",
+      "letters",
+      "living_moments",
+      "bond_people",
+      "image_generations",
+    ] as const;
+    for (const t of tables) {
+      const { error } = await sb
+        .from(t)
+        .delete()
+        .eq("user_id", uid)
+        .eq("character_id", data.characterId);
+      if (error) throw new Error("Couldn't finish deleting this bond. Please try again.");
+    }
+    const { error } = await sb
+      .from("characters")
+      .delete()
+      .eq("id", data.characterId)
+      .eq("user_id", uid);
+    if (error) throw new Error("Couldn't finish deleting this bond. Please try again.");
+    return { ok: true, alreadyGone: false };
+  });
