@@ -46,16 +46,16 @@ export function decodeChatError(raw: string | undefined | null): ChatErrorCode |
 
 /** True when the category is a usage limit and deserves the cooldown card. */
 export function isLimitError(code: ChatErrorCode | null): boolean {
-  return code === "allowance" || code === "cooldown" || code === "rate_limit" || code === "quota";
+  return code === "allowance" || code === "cooldown";
 }
 
 /** Contextual, never technical. `name` is the character's name. */
 export function chatErrorMessage(code: ChatErrorCode, name: string): string {
   switch (code) {
     case "rate_limit":
-      return `Chat is temporarily unavailable — too many requests at once.`;
+      return `${name} needs a short breather — the AI service is temporarily busy. Try again in a moment.`;
     case "quota":
-      return `${name} needs a short breather — we've hit a temporary limit.`;
+      return `${name} can't reply right now — the app's AI service has run out of credits. This isn't your message allowance; your messages are safe.`;
     case "cooldown":
       return `${name} needs a little breather.`;
     case "allowance":
@@ -79,5 +79,5 @@ export function chatErrorMessage(code: ChatErrorCode, name: string): string {
 
 /** Only transient categories are worth an automatic retry. */
 export function isRetryable(code: ChatErrorCode): boolean {
-  return code === "timeout" || code === "offline" || code === "server" || code === "context";
+  return code === "timeout" || code === "offline" || code === "server" || code === "context" || code === "rate_limit";
 }

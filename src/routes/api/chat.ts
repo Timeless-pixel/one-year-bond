@@ -339,7 +339,7 @@ function classifyError(error: unknown, label: string): ChatErrorCode {
       err?.cause instanceof Error ? err.cause.message.slice(0, 300) : undefined,
   });
   if (status === 429 || /rate.?limit/i.test(msg)) return "rate_limit";
-  if (status === 402 || /payment required|credit|quota|insufficient/i.test(msg)) return "quota";
+  if (status === 402 || /payment.?required|not enough credits/i.test(msg)) return "quota";
   if (status === 401 || status === 403) return "unauthorized";
   if (status === 400 && /token|context|too (long|large)|maximum/i.test(msg)) return "context";
   if (/abort|timed? ?out|ETIMEDOUT/i.test(msg)) return "timeout";
