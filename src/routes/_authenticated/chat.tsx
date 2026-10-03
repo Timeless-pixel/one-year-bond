@@ -531,20 +531,79 @@ function ChatWindow({
                 className={`flex ${mine ? "justify-end" : "justify-start"} ${settings.animations ? "animate-fade-in" : ""}`}
               >
                 {mine ? (
-                  <div
-                    className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm"
-                    style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)" }}
-                  >
-                    {segments.map((s, i) =>
-                      s.type === "action" ? (
-                        <span key={i} className="mr-1 italic opacity-80">
-                          *{s.value}*
-                        </span>
-                      ) : (
-                        <span key={i}>{s.value} </span>
-                      ),
-                    )}
-                  </div>
+                  editingId === m.id ? (
+                    <div className="glass w-full max-w-[85%] rounded-2xl p-3">
+                      <textarea
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        autoFocus
+                        rows={3}
+                        aria-label="Edit message"
+                        className="w-full resize-none bg-transparent text-sm outline-none"
+                      />
+                      {editError && <p className="mt-1 text-xs text-destructive">{editError}</p>}
+                      <div className="mt-2 flex justify-end gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} disabled={savingEdit}>
+                          <X className="h-3.5 w-3.5" /> Cancel
+                        </Button>
+                        <Button size="sm" onClick={() => void saveEdit(m.id)} disabled={savingEdit || !editText.trim()}>
+                          <Check className="h-3.5 w-3.5" /> {savingEdit ? "Saving…" : "Save"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="group flex max-w-[85%] items-start gap-1">
+                      <div className="relative mt-1.5">
+                        <button
+                          aria-label="Message options"
+                          onClick={() => setOpenMenuId(openMenuId === m.id ? null : m.id)}
+                          className="rounded-full p-1 text-muted-foreground opacity-60 transition hover:text-foreground md:opacity-0 md:group-hover:opacity-100"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                        {openMenuId === m.id && (
+                          <div className="glass absolute right-0 top-7 z-20 w-32 rounded-xl p-1 text-sm">
+                            <button
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(raw);
+                                setOpenMenuId(null);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-accent"
+                            >
+                              <Copy className="h-3.5 w-3.5" /> Copy
+                            </button>
+                            {!m.id.startsWith("temp") && messageMeta.has(m.id) && (
+                              <button
+                                onClick={() => startEditing(m)}
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-accent"
+                              >
+                                <Pencil className="h-3.5 w-3.5" /> Edit
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div
+                          className="rounded-2xl rounded-br-md px-4 py-2.5 text-sm"
+                          style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)" }}
+                        >
+                          {segments.map((s, i) =>
+                            s.type === "action" ? (
+                              <span key={i} className="mr-1 italic opacity-80">
+                                *{s.value}*
+                              </span>
+                            ) : (
+                              <span key={i}>{s.value} </span>
+                            ),
+                          )}
+                        </div>
+                        {messageMeta.get(m.id)?.editedAt && (
+                          <div className="mt-0.5 text-right text-[10px] text-muted-foreground">Edited</div>
+                        )}
+                      </div>
+                    </div>
+                  )
                 ) : (
                   <div className="max-w-[85%] text-sm leading-relaxed text-foreground">
                     <div className="mb-1 text-xs text-muted-foreground">{character.name}</div>
@@ -562,6 +621,22 @@ function ChatWindow({
                         ),
                       )}
                     </div>
+                    {(() => {
+                      const editedUser = staleReplyFor(messages.indexOf(m));
+                      if (!editedUser) return null;
+                      return (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>This reply was for your earlier message.</span>
+                          <button
+                            onClick={() => void regenerateEdited(editedUser)}
+                            disabled={availability.status !== "available" || isBusy}
+                            className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 hover:text-foreground disabled:opacity-50"
+                          >
+                            <RefreshCw className="h-3 w-3" /> Regenerate response
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
