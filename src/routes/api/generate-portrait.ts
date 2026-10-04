@@ -112,6 +112,9 @@ export const Route = createFileRoute("/api/generate-portrait")({
         const genId = genRow.id;
 
         const finalize = async (status: "succeeded" | "failed", errorMessage?: string) => {
+          const { logAiUsage } = await import("@/lib/ai-usage.server");
+          const outOfCredits = /\b402\b|not enough credits|payment.?required/i.test(errorMessage ?? "");
+          void logAiUsage("portrait", status === "succeeded" ? "ok" : outOfCredits ? "credits_exhausted" : "error");
           try {
             await supabaseAdmin
               .from("image_generations")

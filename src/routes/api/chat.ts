@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { logAiUsage } from "@/lib/ai-usage.server";
 import { streamText, generateText, convertToModelMessages, type UIMessage } from "ai";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -1031,6 +1032,7 @@ export const Route = createFileRoute("/api/chat")({
             temperature: 0.95,
             onError: ({ error }) => {
               streamErrorCode = classifyError(error, "model stream");
+              void logAiUsage("chat", streamErrorCode === "quota" ? "credits_exhausted" : "error");
             },
           });
 
@@ -1054,6 +1056,7 @@ export const Route = createFileRoute("/api/chat")({
             onFinish: async ({ responseMessage }) => {
               const raw = responseMessage.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
               if (!raw.trim()) return;
+              void logAiUsage("chat", "ok");
               const { text: withoutExpr, expression } = parseExpression(raw);
               const { text, scene: newScene } = parseScene(withoutExpr);
               if (!text.trim()) return;
