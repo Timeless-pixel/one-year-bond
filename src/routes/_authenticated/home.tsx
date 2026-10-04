@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyCharacter, listMemories } from "@/lib/character.functions";
 import { AppShell } from "@/components/AppShell";
+import { AiCreditCard } from "@/components/AiCreditCard";
 import { useEffect } from "react";
 import { getLivingMoments, refreshLivingMoments, setLivingMomentStatus } from "@/lib/bond.functions";
 import { useActiveBondId } from "@/hooks/useActiveBond";
@@ -91,6 +92,8 @@ function HomePage() {
             {character.name} is <span className="text-gradient italic">waiting</span> for you.
           </h1>
         </div>
+
+        <AiCreditCard />
 
         {(moments as LivingMoment[]).length > 0 && (
           <div className="mb-8 flex flex-col gap-3">
