@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
-import { logAiUsage } from "@/lib/ai-usage.server";
+import { logAiUsage, describeAiError, statusFromCode } from "@/lib/ai-usage.server";
 import { streamText, generateText, convertToModelMessages, type UIMessage } from "ai";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -1032,7 +1032,8 @@ export const Route = createFileRoute("/api/chat")({
             temperature: 0.95,
             onError: ({ error }) => {
               streamErrorCode = classifyError(error, "model stream");
-              void logAiUsage("chat", streamErrorCode === "quota" ? "credits_exhausted" : "error");
+              const d = describeAiError(error);
+              void logAiUsage("chat", streamErrorCode === "quota" ? "credits_exhausted" : statusFromCode(d.code, d.detail), d);
             },
           });
 
