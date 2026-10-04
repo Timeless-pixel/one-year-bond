@@ -8,6 +8,13 @@
       "when": 1790870740883,
       "tag": "0000_scope_scenarios_read_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791102521415,
+      "tag": "0001_admin_roles_and_ai_usage",
+      "breakpoints": true
     }
   ]
 }
