@@ -41,20 +41,29 @@ export type Database = {
       ai_usage_events: {
         Row: {
           created_at: string
+          error_code: string | null
+          error_detail: string | null
           id: string
           kind: string
+          model: string | null
           status: string
         }
         Insert: {
           created_at?: string
+          error_code?: string | null
+          error_detail?: string | null
           id?: string
           kind: string
+          model?: string | null
           status: string
         }
         Update: {
           created_at?: string
+          error_code?: string | null
+          error_detail?: string | null
           id?: string
           kind?: string
+          model?: string | null
           status?: string
         }
         Relationships: []

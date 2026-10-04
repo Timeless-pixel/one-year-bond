@@ -1,0 +1,1 @@
+ALTER TABLE public.ai_usage_events ADD COLUMN model text, ADD COLUMN error_code text, ADD COLUMN error_detail text;
