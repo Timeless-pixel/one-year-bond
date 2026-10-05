@@ -53,9 +53,9 @@ export function isLimitError(code: ChatErrorCode | null): boolean {
 export function chatErrorMessage(code: ChatErrorCode, name: string): string {
   switch (code) {
     case "rate_limit":
-      return `${name} needs a short breather — the AI service is temporarily busy. Try again in a moment.`;
+      return `The AI service is temporarily rate-limited. Please try again later.`;
     case "quota":
-      return `${name} can't reply right now — the app's AI service has run out of credits. This isn't your message allowance; your messages are safe.`;
+      return `AI service credits are currently exhausted. Your messages are safe.`;
     case "cooldown":
       return `${name} needs a little breather.`;
     case "allowance":
@@ -73,7 +73,7 @@ export function chatErrorMessage(code: ChatErrorCode, name: string): string {
     case "too_long":
       return `That message is a little too long — try trimming it down.`;
     default:
-      return `Something went wrong while ${name} was responding.`;
+      return `The AI service is temporarily unavailable. Please try again later.`;
   }
 }
 
