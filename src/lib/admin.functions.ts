@@ -3,19 +3,25 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export type AiCreditStatus = {
   isAdmin: boolean;
+  provider: string;
+  model: string;
   chatToday: number;
   chatMonth: number;
   portraitToday: number;
   portraitMonth: number;
-  lastExhaustedAt: string | null;
   lastOkAt: string | null;
+  lastFailAt: string | null;
+  lastErrorCode: string | null;
+  lastErrorDetail: string | null;
+  lastFailStatus: string | null;
   exhausted: boolean;
   failuresLastHour: number;
 };
 
 const EMPTY: AiCreditStatus = {
-  isAdmin: false, chatToday: 0, chatMonth: 0, portraitToday: 0, portraitMonth: 0,
-  lastExhaustedAt: null, lastOkAt: null, exhausted: false, failuresLastHour: 0,
+  isAdmin: false, provider: "", model: "", chatToday: 0, chatMonth: 0, portraitToday: 0, portraitMonth: 0,
+  lastOkAt: null, lastFailAt: null, lastErrorCode: null, lastErrorDetail: null, lastFailStatus: null,
+  exhausted: false, failuresLastHour: 0,
 };
 
 export const getAiCreditStatus = createServerFn({ method: "GET" })
@@ -35,21 +41,30 @@ export const getAiCreditStatus = createServerFn({ method: "GET" })
         .eq("kind", kind).eq("status", "ok").gte("created_at", since);
       return count ?? 0;
     };
-    const latest = async (status: string) => {
-      const { data } = await supabase.from("ai_usage_events").select("created_at")
-        .eq("status", status).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      return data?.created_at ?? null;
-    };
-    const [chatToday, chatMonth, portraitToday, portraitMonth, lastExhaustedAt, lastOkAt, fails] = await Promise.all([
+    const [chatToday, chatMonth, portraitToday, portraitMonth, okRes, failRes, fails] = await Promise.all([
       count("chat", dayStart), count("chat", monthStart),
       count("portrait", dayStart), count("portrait", monthStart),
-      latest("credits_exhausted"), latest("ok"),
+      supabase.from("ai_usage_events").select("created_at").eq("status", "ok")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("ai_usage_events").select("created_at, status, error_code, error_detail").neq("status", "ok")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("ai_usage_events").select("id", { count: "exact", head: true })
-        .eq("status", "credits_exhausted").gte("created_at", hourAgo),
+        .neq("status", "ok").gte("created_at", hourAgo),
     ]);
-    const exhausted = !!lastExhaustedAt && (!lastOkAt || lastExhaustedAt > lastOkAt);
+    const lastOkAt = okRes.data?.created_at ?? null;
+    const fail = failRes.data;
+    const exhausted = fail?.status === "credits_exhausted" && (!lastOkAt || fail.created_at > lastOkAt);
     return {
-      isAdmin: true, chatToday, chatMonth, portraitToday, portraitMonth,
-      lastExhaustedAt, lastOkAt, exhausted, failuresLastHour: fails.count ?? 0,
+      isAdmin: true,
+      provider: "Lovable AI",
+      model: "google/gemini-3-flash-preview",
+      chatToday, chatMonth, portraitToday, portraitMonth,
+      lastOkAt,
+      lastFailAt: fail?.created_at ?? null,
+      lastErrorCode: fail?.error_code ?? null,
+      lastErrorDetail: fail?.error_detail ?? null,
+      lastFailStatus: fail?.status ?? null,
+      exhausted,
+      failuresLastHour: fails.count ?? 0,
     };
   });
