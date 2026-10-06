@@ -1033,7 +1033,7 @@ export const Route = createFileRoute("/api/chat")({
             onError: ({ error }) => {
               streamErrorCode = classifyError(error, "model stream");
               const d = describeAiError(error);
-              void logAiUsage("chat", streamErrorCode === "quota" ? "credits_exhausted" : statusFromCode(d.code, d.detail), d);
+              void logAiUsage("chat", statusFromCode(d.code, d.detail), d);
             },
           });
 

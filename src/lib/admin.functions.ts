@@ -53,7 +53,10 @@ export const getAiCreditStatus = createServerFn({ method: "GET" })
     ]);
     const lastOkAt = okRes.data?.created_at ?? null;
     const fail = failRes.data;
-    const exhausted = fail?.status === "credits_exhausted" && (!lastOkAt || fail.created_at > lastOkAt);
+    // Only "exhausted" when the provider explicitly said so (402 or a credits message).
+    const exhausted = fail?.status === "credits_exhausted"
+      && (fail.error_code === "402" || /credit/i.test(fail.error_detail ?? ""))
+      && (!lastOkAt || fail.created_at > lastOkAt);
     return {
       isAdmin: true,
       provider: "Lovable AI",
