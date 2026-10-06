@@ -21,19 +21,23 @@ export function AiCreditCard() {
   if (!data?.isAdmin) return null;
 
   const failingNow = !!data.lastFailAt && (!data.lastOkAt || data.lastFailAt > data.lastOkAt);
+  const FAIL_LABEL: Record<string, string> = {
+    rate_limited: "AI service unavailable — rate-limited by the provider",
+    auth_error: "AI service unavailable — authentication/configuration error",
+    provider_error: "AI service unavailable — provider/server error",
+    timeout: "AI service unavailable — request timed out",
+  };
   const status = data.exhausted
-    ? "Out of credits — replies and portraits are failing"
-    : failingNow && data.lastFailStatus === "rate_limited"
-      ? "Rate-limited by the AI service"
-      : failingNow
-        ? "AI requests are failing"
-        : data.lastOkAt
-          ? "Working normally"
-          : "No successful AI requests recorded yet";
+    ? "Out of credits — AI replies and portraits unavailable"
+    : failingNow
+      ? FAIL_LABEL[data.lastFailStatus ?? ""] ?? "AI service unavailable"
+      : data.lastOkAt
+        ? "Working normally"
+        : "No successful AI requests recorded yet";
 
   return (
     <div className={`glass mb-8 rounded-2xl p-5 ${data.exhausted || failingNow ? "border border-destructive/60" : ""}`}>
-      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Admin · AI service</div>
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Admin · AI service (separate from user message allowance)</div>
       <div className={`mt-1 break-words text-lg ${data.exhausted || failingNow ? "text-destructive" : ""}`}>{status}</div>
       <p className="mt-1 text-xs text-muted-foreground" role={isError ? "status" : undefined}>
         {isError
@@ -42,15 +46,14 @@ export function AiCreditCard() {
       </p>
       {data.exhausted && (
         <p className="mt-1 text-xs text-muted-foreground">
-          Top up or upgrade in your workspace settings (Plans &amp; credits).
+          Credits are controlled by your Lovable workspace — top up or upgrade in workspace settings (Plans &amp; credits).
         </p>
       )}
 
       <dl className="mt-4 grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
         <Row k="AI provider" v={data.provider} />
         <Row k="Model" v={data.model} />
-        <Row k="Credits remaining" v="Credit balance unavailable" />
-        <Row k="Credit limit / reset" v="Shown in workspace settings" />
+        <Row k="Credit balance" v="Managed by Lovable workspace" />
         <Row k="Last successful AI request" v={fmt(data.lastOkAt)} />
         <Row k="Last failed AI request" v={fmt(data.lastFailAt)} />
         <Row k="Error code" v={data.lastErrorCode || (data.lastFailAt ? "Not recorded" : "None recorded")} />
