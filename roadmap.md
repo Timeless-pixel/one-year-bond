@@ -1,0 +1,3 @@
+- [ ] Connect Google Gemini securely and migrate text-generation calls; keep portraits on Lovable AI.
+- [ ] Update AI status/error reporting and add focused provider/error tests.
+- [ ] Verify the build and streamed chat response when Gemini access is available.
